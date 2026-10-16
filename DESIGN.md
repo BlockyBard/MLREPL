@@ -256,3 +256,65 @@ Negative results, kept as options but **off by default**:
   recompiles, and small batches can't amortize compilation. Worth re-measuring on GPU with long fits.
 - **On a single GPU**, prefer the serial evaluator plus larger batches and `fit_multistart`; several
   processes contending for one GPU rarely helps.
+
+## Regularity experiment v1 (`results/regularity_v1`)
+
+**Question:** does description length recover regularity without a man-made/organic switch?
+
+**Setup:**
+- Same search with and without the detector moves: `pattern` (line/grid/circle fits on instance
+  poses → array/radial), `mirror` (size-checked mirror pairs), `symmetrize` (mirror a part across a
+  detected target symmetry plane), `plane` (RANSAC slab), `count` (n ± 1).
+- 150 candidate fits per run, seed 0, a single seed.
+- Score = 0.5 (1 − IoU) + 0.5 (1 − surface recall) + 0.001 · complexity. Lower is better.
+- No target is labelled regular or irregular anywhere.
+
+| target | kind | baseline score / IoU | detectors score / IoU | Δ score |
+|---|---|---|---|---|
+| gear | regular | 0.291 / 0.626 | **0.128 / 0.902** | −0.163 |
+| colonnade | regular | 0.234 / 0.823 | **0.167 / 0.916** | −0.067 |
+| fence | regular | 0.131 / 0.925 | **0.094 / 0.966** | −0.037 |
+| bookshelf | regular | 0.290 / 0.723 | 0.288 / 0.768 | −0.002 |
+| table | regular | 0.046 / 0.988 | 0.047 / 0.987 | ≈ 0 |
+| chair | regular | 0.115 / 0.878 | 0.115 / 0.877 | ≈ 0 |
+| bracket | regular | **0.041** / 0.995 | 0.066 / 0.994 | +0.025 |
+| stool | regular | **0.072 / 0.970** | 0.161 / 0.869 | +0.089 |
+| rubble | irregular | 0.123 / 0.947 | **0.086 / 0.976** | −0.037 |
+| cairn | irregular | **0.164 / 0.930** | 0.217 / 0.895 | +0.053 |
+
+Detector usage across all runs (proposed / fitted / improved parent / entered beam):
+
+| detector | proposed | fitted | improved parent | entered beam |
+|---|---|---|---|---|
+| plane | 302 | 224 | 97 | 23 |
+| symmetrize | 116 | 56 | 21 | 11 |
+| pattern | 240 | 17 | 0 | 2 |
+| mirror | 101 | 1 | 1 | 0 |
+| count | 50 | 0 | 0 | 0 |
+
+What this shows:
+
+1. **The detectors help overall:** 5 of 10 targets better, 2 equal, 3 worse. The big wins are gear
+   (IoU 0.63 → 0.90, via symmetrize → `mirror(mirror(instance))`), colonnade and fence. On the
+   irregular controls, **no pattern ops were imposed**: rubble improved, cairn got worse. With one
+   seed, differences under ~0.03 are within run-to-run variance.
+2. **The core claim is supported only half-way.** The gains came from *data-side* detectors (plane,
+   symmetry) and symmetrize-mirrors, not from the array/radial rewrites. The pattern detector was
+   applicable 17 times in 240 tries and never improved its parent.
+   - Applied to the ground-truth programs, the same rewrites are exact and shorter (gear 97 → 70.5,
+     fence 52 → 40.5), so the *objective* does prefer patterns when the geometry is right.
+   - The search doesn't reach that state, for two reasons:
+     - (a) intermediate instance nodes rarely have pattern-exact poses (densify copies poses, counts
+       are off), so the line/circle fits fail tolerance;
+     - (b) the compression gain (≈ 0.01–0.03 in score) is the same size as the noise of
+       re-fitting a candidate from scratch. Re-fitting even the exact ground-truth rewrite shifts its
+       score by 0.005–0.04.
+3. **Losses** (stool, bracket, cairn) come from detector proposals displacing better lineages from
+   the 3-wide beam at a fixed budget, not from wrong regularity.
+
+Next, to test the claim properly:
+- **(i) Detect patterns from the data**, not from the program: cluster missing-volume components by
+  shape, fit line/circle/grid to their centroids, and propose a pattern op with one fitted prototype.
+- **(ii) Cut evaluation noise:** warm-start fits for children that inherit parameters (low τ₀ and
+  learning rate), and score with a fixed, converged fit.
+- **(iii) Repeat over 3–5 seeds** and report mean ± spread.

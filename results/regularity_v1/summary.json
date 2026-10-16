@@ -1,0 +1,556 @@
+{
+ "fence": {
+  "kind": "regular",
+  "gt_complexity": 52.0,
+  "baseline": {
+   "score": 0.1305,
+   "iou": 0.9254,
+   "complexity": 78.5,
+   "patterns": {},
+   "structure": "union(instance(box),subtract(transform(box),instance+dk(box)))",
+   "evaluated": 157,
+   "seconds": 478.9,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.094,
+   "iou": 0.9664,
+   "complexity": 76.5,
+   "patterns": {},
+   "structure": "union(instance(box),subtract(transform(box),instance(box)))",
+   "evaluated": 153,
+   "seconds": 276.6,
+   "detector_stats": {
+    "pattern": [
+     17,
+     1,
+     0,
+     0
+    ],
+    "mirror": [
+     11,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     10,
+     0,
+     0,
+     0
+    ],
+    "plane": [
+     28,
+     25,
+     10,
+     5
+    ],
+    "count": [
+     3,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "gear": {
+  "kind": "regular",
+  "gt_complexity": 97.0,
+  "baseline": {
+   "score": 0.2907,
+   "iou": 0.6262,
+   "complexity": 69.5,
+   "patterns": {},
+   "structure": "instance(box)",
+   "evaluated": 137,
+   "seconds": 457.6,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.1283,
+   "iou": 0.9017,
+   "complexity": 69.0,
+   "patterns": {
+    "mirror": 2
+   },
+   "structure": "mirror[1](mirror[2](instance(box)))",
+   "evaluated": 150,
+   "seconds": 1116.1,
+   "detector_stats": {
+    "pattern": [
+     33,
+     1,
+     0,
+     0
+    ],
+    "mirror": [
+     12,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     17,
+     15,
+     8,
+     6
+    ],
+    "plane": [
+     29,
+     29,
+     7,
+     0
+    ],
+    "count": [
+     11,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "table": {
+  "kind": "regular",
+  "gt_complexity": 40.5,
+  "baseline": {
+   "score": 0.0465,
+   "iou": 0.9879,
+   "complexity": 40.5,
+   "patterns": {},
+   "structure": "union(instance(cylinder),transform(box))",
+   "evaluated": 110,
+   "seconds": 124.5,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.0468,
+   "iou": 0.9874,
+   "complexity": 40.5,
+   "patterns": {},
+   "structure": "union(instance(cylinder),transform(box))",
+   "evaluated": 137,
+   "seconds": 153.4,
+   "detector_stats": {
+    "pattern": [
+     22,
+     8,
+     0,
+     1
+    ],
+    "mirror": [
+     13,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     12,
+     10,
+     3,
+     3
+    ],
+    "plane": [
+     54,
+     21,
+     18,
+     2
+    ],
+    "count": [
+     7,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "colonnade": {
+  "kind": "regular",
+  "gt_complexity": 84.5,
+  "baseline": {
+   "score": 0.2335,
+   "iou": 0.8226,
+   "complexity": 82.5,
+   "patterns": {},
+   "structure": "union(instance(box),subtract(subtract(transform(box),instance(capsule)),transform(box)))",
+   "evaluated": 159,
+   "seconds": 278.5,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.1669,
+   "iou": 0.9158,
+   "complexity": 80.0,
+   "patterns": {},
+   "structure": "union(instance(capsule),transform(box),transform(box),transform(box),transform(cylinder))",
+   "evaluated": 163,
+   "seconds": 255.8,
+   "detector_stats": {
+    "pattern": [
+     22,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     7,
+     1,
+     1,
+     0
+    ],
+    "symmetrize": [
+     15,
+     11,
+     7,
+     1
+    ],
+    "plane": [
+     19,
+     19,
+     6,
+     0
+    ],
+    "count": [
+     4,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "bracket": {
+  "kind": "regular",
+  "gt_complexity": 37.0,
+  "baseline": {
+   "score": 0.0405,
+   "iou": 0.9949,
+   "complexity": 38.0,
+   "patterns": {},
+   "structure": "subtract(transform(box),instance(box))",
+   "evaluated": 145,
+   "seconds": 133.9,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.0658,
+   "iou": 0.9944,
+   "complexity": 63.0,
+   "patterns": {},
+   "structure": "subtract(subtract(subtract(transform(box),transform(capsule)),transform(capsule)),transform(cylinder))",
+   "evaluated": 90,
+   "seconds": 90.3,
+   "detector_stats": {
+    "pattern": [
+     40,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     21,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     18,
+     10,
+     0,
+     0
+    ],
+    "plane": [
+     44,
+     2,
+     2,
+     0
+    ],
+    "count": [
+     4,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "stool": {
+  "kind": "regular",
+  "gt_complexity": 40.5,
+  "baseline": {
+   "score": 0.0725,
+   "iou": 0.9698,
+   "complexity": 58.0,
+   "patterns": {},
+   "structure": "union(instance+dk(cylinder),subtract(transform(cylinder),transform(box)))",
+   "evaluated": 162,
+   "seconds": 280.0,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.1613,
+   "iou": 0.8687,
+   "complexity": 85.0,
+   "patterns": {
+    "mirror": 1
+   },
+   "structure": "union(mirror[2](transform(capsule)),subtract(subtract(transform(bend(box)),transform(cylinder)),transform(capsule)),transform(capsule))",
+   "evaluated": 163,
+   "seconds": 242.6,
+   "detector_stats": {
+    "pattern": [
+     18,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     5,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     12,
+     10,
+     3,
+     1
+    ],
+    "plane": [
+     26,
+     26,
+     10,
+     3
+    ],
+    "count": [
+     3,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "chair": {
+  "kind": "regular",
+  "gt_complexity": 78.0,
+  "baseline": {
+   "score": 0.1149,
+   "iou": 0.8782,
+   "complexity": 54.0,
+   "patterns": {},
+   "structure": "union(instance(capsule),transform(box),transform(box))",
+   "evaluated": 153,
+   "seconds": 251.6,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.1154,
+   "iou": 0.8773,
+   "complexity": 54.0,
+   "patterns": {},
+   "structure": "union(instance(capsule),transform(box),transform(box))",
+   "evaluated": 154,
+   "seconds": 232.0,
+   "detector_stats": {
+    "pattern": [
+     17,
+     7,
+     0,
+     1
+    ],
+    "mirror": [
+     10,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     5,
+     0,
+     0,
+     0
+    ],
+    "plane": [
+     25,
+     25,
+     11,
+     3
+    ],
+    "count": [
+     5,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "bookshelf": {
+  "kind": "regular",
+  "gt_complexity": 100.5,
+  "baseline": {
+   "score": 0.2903,
+   "iou": 0.7225,
+   "complexity": 65.0,
+   "patterns": {},
+   "structure": "union(subtract(transform(box),transform(box)),subtract(transform(box),transform(cylinder)))",
+   "evaluated": 154,
+   "seconds": 173.4,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.2878,
+   "iou": 0.7678,
+   "complexity": 96.5,
+   "patterns": {},
+   "structure": "union(subtract(transform(box),instance(capsule)),subtract(transform(box),transform(box)))",
+   "evaluated": 159,
+   "seconds": 209.1,
+   "detector_stats": {
+    "pattern": [
+     37,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     9,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     10,
+     0,
+     0,
+     0
+    ],
+    "plane": [
+     29,
+     29,
+     7,
+     3
+    ],
+    "count": [
+     7,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "rubble": {
+  "kind": "irregular",
+  "gt_complexity": 118.0,
+  "baseline": {
+   "score": 0.1228,
+   "iou": 0.9471,
+   "complexity": 87.5,
+   "patterns": {},
+   "structure": "union(instance(box),instance(sphere),transform(capsule))",
+   "evaluated": 157,
+   "seconds": 528.9,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.0862,
+   "iou": 0.9761,
+   "complexity": 70.0,
+   "patterns": {},
+   "structure": "union(instance(box),instance(capsule),transform(sphere))",
+   "evaluated": 163,
+   "seconds": 517.0,
+   "detector_stats": {
+    "pattern": [
+     16,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     7,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     7,
+     0,
+     0,
+     0
+    ],
+    "plane": [
+     23,
+     23,
+     13,
+     3
+    ],
+    "count": [
+     3,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ },
+ "cairn": {
+  "kind": "irregular",
+  "gt_complexity": 79.0,
+  "baseline": {
+   "score": 0.1636,
+   "iou": 0.9305,
+   "complexity": 110.5,
+   "patterns": {},
+   "structure": "union(instance+dk(torus),transform(capsule))",
+   "evaluated": 152,
+   "seconds": 514.9,
+   "detector_stats": {}
+  },
+  "detectors": {
+   "score": 0.2169,
+   "iou": 0.8951,
+   "complexity": 103.5,
+   "patterns": {},
+   "structure": "instance(cylinder)",
+   "evaluated": 150,
+   "seconds": 754.5,
+   "detector_stats": {
+    "pattern": [
+     18,
+     0,
+     0,
+     0
+    ],
+    "mirror": [
+     6,
+     0,
+     0,
+     0
+    ],
+    "symmetrize": [
+     10,
+     0,
+     0,
+     0
+    ],
+    "plane": [
+     25,
+     25,
+     13,
+     4
+    ],
+    "count": [
+     3,
+     0,
+     0,
+     0
+    ]
+   }
+  }
+ }
+}
