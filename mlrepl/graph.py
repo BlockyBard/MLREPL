@@ -53,9 +53,18 @@ class Node:
     def values(self) -> dict:
         return {n: self.spec.params[n].from_raw(r) for n, r in self.raw.items()}
 
+    @property
+    def device(self) -> torch.device:
+        return next(iter(self.raw.values())).device if self.raw else torch.device("cpu")
+
     def set_value(self, name: str, value):
         ps = self.spec.params[name]
-        self.raw[name] = ps.to_raw(torch.as_tensor(value, dtype=torch.float32))
+        dev = self.device
+        self.raw[name] = ps.to_raw(torch.as_tensor(value, dtype=torch.float32).to(dev))
+
+    def to(self, device) -> "Node":
+        self.raw = {k: v.detach().to(device) for k, v in self.raw.items()}
+        return self
 
     def value(self, name: str) -> torch.Tensor:
         return self.spec.params[name].from_raw(self.raw[name])
@@ -79,16 +88,25 @@ class Node:
             "id": self.id,
             "op": self.op,
             "inputs": list(self.inputs),
-            "params": {k: v.detach().tolist() for k, v in self.values().items()},
+            "params": {k: v.detach().cpu().tolist() for k, v in self.values().items()},
             "attrs": self.attrs,
         }
 
 
 class Graph:
-    def __init__(self, nodes: Iterable[Node] = (), output: Optional[str] = None):
+    def __init__(self, nodes: Iterable[Node] = (), output: Optional[str] = None, device=None):
         self.nodes: dict[str, Node] = {n.id: n for n in nodes}
         self.output = output
         self._ids = itertools.count()
+        self.device = torch.device(device) if device is not None else (
+            next(iter(self.nodes.values())).device if self.nodes else torch.device("cpu"))
+
+    def to(self, device) -> "Graph":
+        """Move all parameters to `device` in place (returns self)."""
+        self.device = torch.device(device)
+        for n in self.nodes.values():
+            n.to(self.device)
+        return self
 
     # -- construction helpers ----------------------------------------------
     def new_id(self, prefix: str) -> str:
@@ -99,7 +117,7 @@ class Graph:
 
     def add(self, op: str, inputs: Iterable[str] = (), params=None, attrs=None, id: Optional[str] = None, k=None) -> str:
         nid = id or self.new_id(op[:3])
-        self.nodes[nid] = Node(nid, op, inputs, params, attrs, k=k)
+        self.nodes[nid] = Node(nid, op, inputs, params, attrs, k=k).to(self.device)
         return nid
 
     def placed(self, prim: str, pos=(0, 0, 0), rot=(0, 0, 0), scale=1.0, attrs=None, **prim_params) -> str:
@@ -145,7 +163,7 @@ class Graph:
             self.output = new
 
     def clone(self) -> "Graph":
-        g = Graph([n.clone() for n in self.nodes.values()], self.output)
+        g = Graph([n.clone() for n in self.nodes.values()], self.output, device=self.device)
         return g
 
     # -- parameters -------------------------------------------------------------
@@ -191,7 +209,8 @@ class Graph:
             if ctx.color and spec.category == "prim":
                 v = vals_cache[nid]
                 col = v["color"] if "color" in v else torch.tensor(
-                    node.attrs.get("material", {}).get("base_color", (0.7, 0.7, 0.7)), dtype=torch.float32)
+                    node.attrs.get("material", {}).get("base_color", (0.7, 0.7, 0.7)), dtype=torch.float32,
+                    device=self.device)
 
                 def f(q):
                     d = spec.sdf(v, children, q, ctx)

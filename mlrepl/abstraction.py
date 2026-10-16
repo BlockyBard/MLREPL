@@ -58,9 +58,9 @@ def _skeleton(g: Graph, nid: str) -> str:
 
 
 def _extent(g: Graph, n=4096):
-    P = torch.rand(n, 3) * 4 - 2
+    P = torch.rand(n, 3, device=g.device) * 4 - 2
     with torch.no_grad():
-        inside = P[g.sdf(P, EvalCtx(hard_gates=True)) < 0].numpy()
+        inside = P[g.sdf(P, EvalCtx(hard_gates=True)) < 0].detach().cpu().numpy()
     if len(inside) < 8:
         return np.zeros(3), 1.0
     return inside.mean(0), float(np.linalg.norm(inside.max(0) - inside.min(0)))
