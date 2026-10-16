@@ -29,12 +29,22 @@ class Target:
     weight: Optional[torch.Tensor] = None  # per-volume-sample confidence (depth carving)
 
     @property
+    def device(self) -> torch.device:
+        return self.points.device
+
+    def to(self, device) -> "Target":
+        for k, v in list(self.__dict__.items()):
+            if isinstance(v, torch.Tensor):
+                setattr(self, k, v.to(device))
+        return self
+
+    @property
     def diag(self) -> float:
         return float((self.hi - self.lo).norm())
 
     def batch(self, nv: int, ns: int, gen: torch.Generator = None):
-        iv = torch.randint(len(self.points), (min(nv, len(self.points)),), generator=gen)
-        is_ = torch.randint(len(self.surface), (min(ns, len(self.surface)),), generator=gen)
+        iv = torch.randint(len(self.points), (min(nv, len(self.points)),), generator=gen).to(self.device)
+        is_ = torch.randint(len(self.surface), (min(ns, len(self.surface)),), generator=gen).to(self.device)
         w = None if self.weight is None else self.weight[iv]
         return self.points[iv], self.occ[iv], self.surface[is_], w
 
@@ -89,7 +99,8 @@ def from_graph(g, lo=(-1, -1, -1), hi=(1, 1, 1), **kw) -> Target:
         out = []
         with torch.no_grad():
             for s in range(0, len(p), 65536):
-                out.append(g.sdf(torch.tensor(p[s:s + 65536], dtype=torch.float32), ctx).numpy())
+                q = torch.tensor(p[s:s + 65536], dtype=torch.float32, device=g.device)
+                out.append(g.sdf(q, ctx).detach().cpu().numpy())
         return np.concatenate(out)
 
     return from_sdf(fn, lo, hi, **kw)

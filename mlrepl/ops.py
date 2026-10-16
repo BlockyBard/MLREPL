@@ -290,8 +290,9 @@ def _instance(v, ch, p, ctx):
     t = v["t"]
     K = t.shape[0]
     if K == 0:
-        out = torch.full(p.shape[:-1], BIG, dtype=p.dtype)
-        return torch.cat([out[..., None], torch.full(p.shape[:-1] + (3,), 0.5)], -1) if ctx.color else out
+        out = torch.full(p.shape[:-1], BIG, dtype=p.dtype, device=p.device)
+        return torch.cat([out[..., None], torch.full(p.shape[:-1] + (3,), 0.5, device=p.device)], -1) \
+            if ctx.color else out
     s = v["s"]
     q = _to_local(p, t, v["r"], s)  # K,*B,3
     nb = p.dim() - 1

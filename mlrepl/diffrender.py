@@ -33,10 +33,11 @@ class Camera:
     H: int
     W: int
 
-    def rays(self, idx: Optional[torch.Tensor] = None):
+    def rays(self, idx: Optional[torch.Tensor] = None, device=None):
         """Return (origins, unit dirs, zscale) for flat pixel indices idx (default: all)."""
         if idx is None:
             idx = torch.arange(self.H * self.W)
+        idx = idx.cpu()
         ys, xs = (idx // self.W).double(), (idx % self.W).double()
         K = torch.as_tensor(self.K)
         d = torch.stack([(xs + 0.5 - K[0, 2]) / K[0, 0], (ys + 0.5 - K[1, 2]) / K[1, 1], torch.ones_like(xs)], -1)
@@ -44,7 +45,8 @@ class Camera:
         d = d @ M[:3, :3].T
         n = d.norm(dim=-1, keepdim=True)
         o = M[:3, 3].expand_as(d)
-        return o.float(), (d / n).float(), (1.0 / n[:, 0]).float()
+        dev = device or "cpu"
+        return o.float().to(dev), (d / n).float().to(dev), (1.0 / n[:, 0]).float().to(dev)
 
 
 def orbit_cameras(n: int, res: int = 64, radius: float = 3.2, elevations=(0.3, -0.45, 0.9), fov: float = 40.0,
@@ -75,12 +77,12 @@ class RenderOpts:
 
 @torch.no_grad()
 def _trace(g: Graph, o, d, opts: RenderOpts, ctx: EvalCtx):
-    N = len(o)
-    t = torch.zeros(N)
-    hit = torch.zeros(N, dtype=torch.bool)
-    best_s = torch.full((N,), float("inf"))
-    best_t = torch.zeros(N)
-    alive = torch.ones(N, dtype=torch.bool)
+    N, dev = len(o), o.device
+    t = torch.zeros(N, device=dev)
+    hit = torch.zeros(N, dtype=torch.bool, device=dev)
+    best_s = torch.full((N,), float("inf"), device=dev)
+    best_t = torch.zeros(N, device=dev)
+    alive = torch.ones(N, dtype=torch.bool, device=dev)
     for _ in range(opts.steps):
         idx = alive.nonzero()[:, 0]
         if len(idx) == 0:
@@ -96,13 +98,13 @@ def _trace(g: Graph, o, d, opts: RenderOpts, ctx: EvalCtx):
     # inside window for hit rays: the minimum along the ray is inside the solid
     hi = hit.nonzero()[:, 0]
     if len(hi):
-        offs = torch.linspace(0, opts.inside_window, opts.inside_samples + 1)[1:]
+        offs = torch.linspace(0, opts.inside_window, opts.inside_samples + 1, device=dev)[1:]
         T = t[hi, None] + offs[None]
         P = o[hi, None] + d[hi, None] * T[..., None]
         s = g.sdf(P.reshape(-1, 3), ctx).reshape(len(hi), -1)
         smin, j = s.min(1)
         better = smin < best_s[hi]
-        best_t[hi] = torch.where(better, T[torch.arange(len(hi)), j], best_t[hi])
+        best_t[hi] = torch.where(better, T[torch.arange(len(hi), device=dev), j], best_t[hi])
     return t, hit, best_t
 
 
@@ -118,17 +120,18 @@ def render(g: Graph, o, d, zscale, ctx: Optional[EvalCtx] = None, opts: Optional
     out = {"hit": hit, "t": t_star}
     xb = (o + d * t_best[:, None]).detach()
     out["mask"] = torch.sigmoid(-g.sdf(xb, trace_ctx) / opts.sigma)
-    depth = torch.zeros(N)
-    normal = torch.zeros(N, 3)
-    albedo = torch.zeros(N, 3)
-    rgb = torch.zeros(N, 3)
+    dev = o.device
+    depth = torch.zeros(N, device=dev)
+    normal = torch.zeros(N, 3, device=dev)
+    albedo = torch.zeros(N, 3, device=dev)
+    rgb = torch.zeros(N, 3, device=dev)
     hi = hit.nonzero()[:, 0]
     if len(hi):
         oh, dh = o[hi], d[hi]
         xs = (oh + dh * t_star[hi, None]).detach()
         f = g.sdf(xs, trace_ctx)
         e = opts.fd_eps
-        E = torch.eye(3) * e
+        E = torch.eye(3, device=dev) * e
         with torch.no_grad():
             grad = torch.stack([g.sdf(xs + E[i], trace_ctx) - g.sdf(xs - E[i], trace_ctx) for i in range(3)], -1)
             grad = grad / (2 * e)
@@ -146,7 +149,7 @@ def render(g: Graph, o, d, zscale, ctx: Optional[EvalCtx] = None, opts: Optional
         if want_color:
             cctx = EvalCtx(tau=ctx.tau, gate_scale=ctx.gate_scale, hard_gates=ctx.hard_gates, color=True)
             alb = g.sdf(x, cctx)[:, 1:]
-            L = torch.tensor(opts.light, dtype=torch.float32)
+            L = torch.tensor(opts.light, dtype=torch.float32, device=dev)
             L = L / L.norm()
             shade = opts.ambient + (1 - opts.ambient) * torch.clamp((n * L).sum(-1), min=0)
             albedo = albedo.index_put((hi,), alb)
@@ -173,6 +176,17 @@ class ImageTarget:
     views: list
     background: tuple = (1.0, 1.0, 1.0)
 
+    @property
+    def device(self):
+        return self.views[0].rgb.device
+
+    def to(self, device) -> "ImageTarget":
+        for v in self.views:
+            v.rgb, v.mask = v.rgb.to(device), v.mask.to(device)
+            if v.depth is not None:
+                v.depth = v.depth.to(device)
+        return self
+
     def sample(self, n: int, gen=None, fg_frac: float = 0.5):
         """Random rays across views, half drawn from foreground pixels (else thin parts are rarely hit)."""
         per = max(1, n // len(self.views))
@@ -180,16 +194,19 @@ class ImageTarget:
         for v in self.views:
             HW = v.cam.H * v.cam.W
             nf = int(per * fg_frac)
-            fg = v.mask.nonzero()[:, 0]
+            fg = v.mask.nonzero()[:, 0].cpu()
             idx = torch.randint(HW, (per - nf,), generator=gen)
             if len(fg):
                 idx = torch.cat([idx, fg[torch.randint(len(fg), (nf,), generator=gen)]])
-            o, d, z = v.cam.rays(idx)
+            dev = v.rgb.device
+            o, d, z = v.cam.rays(idx, dev)
+            idx = idx.to(dev)
             O.append(o), D.append(d), Z.append(z), RGB.append(v.rgb[idx]), M.append(v.mask[idx])
             if v.depth is not None:
-                DEP.append(v.depth[idx]), HASD.append(torch.ones(len(idx), dtype=torch.bool))
+                DEP.append(v.depth[idx]), HASD.append(torch.ones(len(idx), dtype=torch.bool, device=dev))
             else:
-                DEP.append(torch.zeros(len(idx))), HASD.append(torch.zeros(len(idx), dtype=torch.bool))
+                DEP.append(torch.zeros(len(idx), device=dev)), HASD.append(torch.zeros(len(idx), dtype=torch.bool,
+                                                                                          device=dev))
         cat = torch.cat
         return cat(O), cat(D), cat(Z), cat(RGB), cat(M), cat(DEP), cat(HASD)
 
@@ -197,7 +214,7 @@ class ImageTarget:
 @torch.no_grad()
 def render_view(g: Graph, cam: Camera, opts: Optional[RenderOpts] = None, chunk: int = 4096) -> dict:
     outs = []
-    o, d, z = cam.rays()
+    o, d, z = cam.rays(device=g.device)
     ctx = EvalCtx(hard_gates=True)
     for s in range(0, len(o), chunk):
         outs.append(render(g, o[s:s + chunk], d[s:s + chunk], z[s:s + chunk], ctx, opts))
@@ -207,7 +224,7 @@ def render_view(g: Graph, cam: Camera, opts: Optional[RenderOpts] = None, chunk:
 def make_views(g: Graph, cams: list[Camera], with_depth: bool = True, opts: Optional[RenderOpts] = None,
                background=(1.0, 1.0, 1.0)) -> ImageTarget:
     views = []
-    bg = torch.tensor(background)
+    bg = torch.tensor(background, device=g.device)
     for cam in cams:
         r = render_view(g, cam, opts)
         hit = r["hit"]
@@ -219,7 +236,7 @@ def make_views(g: Graph, cams: list[Camera], with_depth: bool = True, opts: Opti
 def view_metrics(g: Graph, target: ImageTarget, opts: Optional[RenderOpts] = None) -> dict:
     """Mask IoU, depth MAE (on co-visible pixels), PSNR over all pixels (background composited)."""
     ious, maes, psnrs = [], [], []
-    bg = torch.tensor(target.background)
+    bg = torch.tensor(target.background, device=g.device)
     for v in target.views:
         r = render_view(g, v.cam, opts)
         pm, gm = r["hit"], v.mask > 0.5
@@ -258,10 +275,10 @@ def carve(target: ImageTarget, lo=(-1.1, -1.1, -1.1), hi=(1.1, 1.1, 1.1), res: i
         inside = front & (u >= 0) & (u < v.cam.W) & (w >= 0) & (w < v.cam.H)
         ui, wi = np.clip(u.astype(int), 0, v.cam.W - 1), np.clip(w.astype(int), 0, v.cam.H - 1)
         pix = wi * v.cam.W + ui
-        m = v.mask.numpy()[pix] > 0.5
+        m = v.mask.detach().cpu().numpy()[pix] > 0.5
         keep = ~inside | m
         if v.depth is not None:
-            dep = v.depth.numpy()[pix]
+            dep = v.depth.detach().cpu().numpy()[pix]
             keep &= ~inside | (dep <= 0) | (z >= dep - depth_margin)
         occ &= keep
     return occ.reshape(res, res, res)
@@ -317,13 +334,14 @@ def add_colors(g: Graph, value=0.7) -> Graph:
     for nid in g.reachable():
         n = g.nodes[nid]
         if n.spec.category == "prim" and "color" not in n.raw:
-            n.set_value("color", torch.full((3,), float(value)))
+            n.set_value("color", torch.full((3,), float(value)))  # set_value keeps the node's device
     return g
 
 
 def fit_images(g: Graph, target: ImageTarget, cfg: Optional[ImageFitConfig] = None, verbose=False):
     cfg = cfg or ImageFitConfig()
-    g = add_colors(g.clone()) if cfg.fit_color else g.clone()
+    g = g.clone().to(target.device)
+    g = add_colors(g) if cfg.fit_color else g
     g0 = g.clone()
     g.requires_grad_(True)
     geo, col = [], []

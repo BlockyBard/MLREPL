@@ -53,14 +53,14 @@ def components(pts: np.ndarray, lo, hi, res=24, min_pts=8) -> list:
 
 def residual(g: Optional[Graph], target: Target) -> Residual:
     P = target.eval_points
-    gt = (target.eval_occ > 0.5).numpy()
+    gt = (target.eval_occ > 0.5).detach().cpu().numpy()
     if g is None:
         pred = np.zeros_like(gt)
     else:
         with torch.no_grad():
-            pred = (g.sdf(P, EvalCtx(tau=0.0, hard_gates=True)) < 0).numpy()
-    Pn = P.numpy()
-    lo, hi = target.lo.numpy(), target.hi.numpy()
+            pred = (g.sdf(P, EvalCtx(tau=0.0, hard_gates=True)) < 0).detach().cpu().numpy()
+    Pn = P.detach().cpu().numpy()
+    lo, hi = target.lo.detach().cpu().numpy(), target.hi.detach().cpu().numpy()
     n_in = max(gt.sum(), 1)
     fn, fp = gt & ~pred, ~gt & pred
     return Residual(components(Pn[fn], lo, hi), components(Pn[fp], lo, hi), fn.sum() / n_in, fp.sum() / n_in)
@@ -213,7 +213,9 @@ def best_kind(part: np.ndarray, target: Target, rng, g: Optional[Graph] = None, 
     kinds = kinds or PRIMITIVES
     lo, hi = part.min(0), part.max(0)
     pad = 0.25 * (hi - lo) + 0.03
-    lo_t, hi_t = torch.tensor(lo - pad, dtype=torch.float32), torch.tensor(hi + pad, dtype=torch.float32)
+    dev = target.device
+    lo_t = torch.tensor(lo - pad, dtype=torch.float32, device=dev)
+    hi_t = torch.tensor(hi + pad, dtype=torch.float32, device=dev)
     P = target.points
     m = ((P >= lo_t) & (P <= hi_t)).all(1)
     if g is not None and m.any():
@@ -253,7 +255,7 @@ def m_subtract(g, res, rng):
     g = g.clone()
     cutter = _placed(g, str(rng.choice(["box", "cylinder", "sphere", "capsule"])), part)
     # subtract from the top-level part that currently covers most of the spurious region
-    pts = torch.tensor(part, dtype=torch.float32)
+    pts = torch.tensor(part, dtype=torch.float32, device=g.device)
     parts = _parts(g)
     with torch.no_grad():
         cover = [(g.sdf(pts, EvalCtx(hard_gates=True), root=p) < 0).float().mean().item() for p in parts]
@@ -297,7 +299,7 @@ def m_swap(g, res, rng):
     _, pid = pp[rng.integers(len(pp))]
     old = g.nodes[pid]
     kind = str(rng.choice([k for k in PRIMITIVES if k != old.op]))
-    ext = _prim_extents(old.op, {k: v.detach().numpy() for k, v in old.values().items()})
+    ext = _prim_extents(old.op, {k: v.detach().cpu().numpy() for k, v in old.values().items()})
     from .graph import Node
 
     g.nodes[pid] = Node(pid, kind, [], _prim_from_extents(kind, ext), old.attrs)
@@ -368,9 +370,9 @@ def m_instancify(g, res, rng):
     poses, exts = [], []
     for c in members:
         n = g.nodes[c]
-        pv = {k: v.detach().numpy() for k, v in g.nodes[n.inputs[0]].values().items()}
+        pv = {k: v.detach().cpu().numpy() for k, v in g.nodes[n.inputs[0]].values().items()}
         e = _prim_extents(kind, pv)
-        v = {k: x.detach().numpy() for k, x in n.values().items()}
+        v = {k: x.detach().cpu().numpy() for k, x in n.values().items()}
         if n.op == "transform":
             poses.append((v["t"], v["r"], float(v["s"][0]), e))
         else:
@@ -394,7 +396,7 @@ def m_instance_deform(g, res, rng):
         return None
     g = g.clone()
     n = g.nodes[insts[rng.integers(len(insts))].id]
-    n.set_value("dk", torch.randn(n.k, 3) * 0.05)
+    n.set_value("dk", torch.randn(n.k, 3, generator=torch.Generator().manual_seed(int(rng.integers(1 << 31)))) * 0.05)
     return g
 
 
@@ -544,7 +546,7 @@ def _evaluate(g: Graph, target: Target, fcfg: FitConfig, beta: float, origin: st
 def initial_candidates(target: Target, n_local: int = 2, seed: int = 0) -> list[Graph]:
     """One global moment-matched primitive per kind, plus `n_local` locally-cropped ones per kind."""
     rng = np.random.default_rng(seed)
-    inside = target.eval_points[target.eval_occ > 0.5].numpy()
+    inside = target.eval_points[target.eval_occ > 0.5].detach().cpu().numpy()
     out = []
     for kind in PRIMITIVES:
         for j in range(1 + n_local):
@@ -574,7 +576,7 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
     if cfg.library and cfg.macro_init:
         from .abstraction import instantiate
 
-        inside = target.eval_points[target.eval_occ > 0.5].numpy()
+        inside = target.eval_points[target.eval_occ > 0.5].detach().cpu().numpy()
         for mac in cfg.library:
             g0 = Graph()
             g0.output = instantiate(g0, mac, inside)

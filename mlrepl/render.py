@@ -35,11 +35,12 @@ def trace(g, cam_to_world: np.ndarray, K: np.ndarray, res: int = 160, steps: int
     d = d.reshape(-1, 3) @ cam_to_world[:3, :3].T
     zscale = 1.0 / np.linalg.norm(d, axis=1)  # depth along camera z = t * zscale... (d has z=1 in cam frame)
     d = d * zscale[:, None]
-    o = torch.tensor(np.broadcast_to(cam_to_world[:3, 3], d.shape).copy(), dtype=torch.float32)
-    d = torch.tensor(d, dtype=torch.float32)
-    t = torch.zeros(len(d))
+    dev = getattr(g, "device", torch.device("cpu"))
+    o = torch.tensor(np.broadcast_to(cam_to_world[:3, 3], d.shape).copy(), dtype=torch.float32, device=dev)
+    d = torch.tensor(d, dtype=torch.float32, device=dev)
+    t = torch.zeros(len(d), device=dev)
     ctx = EvalCtx(tau=0.0, hard_gates=True)
-    hit = torch.zeros(len(d), dtype=torch.bool)
+    hit = torch.zeros(len(d), dtype=torch.bool, device=dev)
     for _ in range(steps):
         p = o + d * t[:, None]
         s = g.sdf(p, ctx)
@@ -49,12 +50,12 @@ def trace(g, cam_to_world: np.ndarray, K: np.ndarray, res: int = 160, steps: int
             break
     p = o + d * t[:, None]
     e = 1e-3
-    n = torch.stack([g.sdf(p + torch.tensor(v) * e, ctx) - g.sdf(p - torch.tensor(v) * e, ctx)
+    n = torch.stack([g.sdf(p + torch.tensor(v, device=dev) * e, ctx) - g.sdf(p - torch.tensor(v, device=dev) * e, ctx)
                      for v in np.eye(3, dtype=np.float32)], -1)
     n = n / (n.norm(dim=-1, keepdim=True) + 1e-9)
     hit = hit & (t < far)
-    depth = (t * torch.tensor(zscale, dtype=torch.float32)).where(hit, torch.zeros_like(t))
-    return hit.reshape(res, res).numpy(), n.reshape(res, res, 3).numpy(), depth.reshape(res, res).numpy()
+    depth = (t * torch.tensor(zscale, dtype=torch.float32, device=dev)).where(hit, torch.zeros_like(t))
+    return hit.reshape(res, res).detach().cpu().numpy(), n.reshape(res, res, 3).detach().cpu().numpy(), depth.reshape(res, res).detach().cpu().numpy()
 
 
 def shade(hit, n, cam_to_world, color=(0.85, 0.6, 0.4)) -> np.ndarray:

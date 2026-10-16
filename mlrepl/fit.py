@@ -162,7 +162,7 @@ def loss_terms(g: Graph, batch, ctx: EvalCtx, eps: float, cfg: FitConfig, late: 
 
 
 def _kmeans(x: torch.Tensor, k: int, iters: int = 10, gen=None):
-    c = x[torch.randperm(len(x), generator=gen)[:k]].clone()
+    c = x[torch.randperm(len(x), generator=gen)[:k].to(x.device)].clone()
     for _ in range(iters):
         a = torch.cdist(x, c).argmin(1)
         for j in range(len(c)):
@@ -214,7 +214,7 @@ def prune_instances(g: Graph, target: Target, gain: float, max_iter: int = 16) -
         if best is None or best[0] >= gain:
             break
         _, n, i = best
-        keep = torch.ones(n.k, dtype=torch.bool)
+        keep = torch.ones(n.k, dtype=torch.bool, device=n.device)
         keep[i] = False
         _remove_rows(n, keep)
         removed += 1
@@ -264,7 +264,7 @@ def densify_instances(g: Graph, target: Target, cfg: FitConfig, gen=None) -> int
 
 def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool = False) -> FitResult:
     cfg = cfg or FitConfig()
-    g = g.clone()
+    g = g.clone().to(target.device)
     gen = torch.Generator().manual_seed(cfg.seed)
     opt = _make_opt(g, cfg)
     hist = []
