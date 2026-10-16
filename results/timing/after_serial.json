@@ -1,0 +1,29 @@
+{
+ "table": {
+  "seconds": 96.2,
+  "evaluated": 63,
+  "fits_per_s": 0.655,
+  "score": 0.0571,
+  "iou": 0.9868,
+  "structure": "union(instance(cylinder),transform(box),transform(box))"
+ },
+ "mug": {
+  "seconds": 92.4,
+  "evaluated": 64,
+  "fits_per_s": 0.692,
+  "score": 0.1551,
+  "iou": 0.8647,
+  "structure": "union(subtract(transform(capsule),transform(cylinder)),transform(torus),transform(torus))"
+ },
+ "bracket": {
+  "seconds": 77.5,
+  "evaluated": 61,
+  "fits_per_s": 0.787,
+  "score": 0.0537,
+  "iou": 0.9867,
+  "structure": "subtract(transform(box),instance(sphere))"
+ },
+ "_total_seconds": 266.1,
+ "_label": "after-serial",
+ "_threads": 2
+}

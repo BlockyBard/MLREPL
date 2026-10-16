@@ -153,3 +153,106 @@ Observations:
 - Next: longer budgets / GPU population batching, a "simplify" phase that tries removals and
   instancify at the end, β sweeps, and macro-seeded runs (mine on these, re-solve) to measure library
   learning gains.
+
+## Differentiable rendering (`diffrender.py`)
+
+- **Tracing:** sphere tracing without gradients, then implicit differentiation at the hit point
+  (`t = t* − (f − sg f)/sg(∇f·d)`), giving exact first-order depth gradients (checked against finite
+  differences).
+- **Color:** fields carry color through every op (`EvalCtx(color=True)`: channel 0 is distance, 1–3 are
+  albedo; booleans pick or blend color by the winning child, and cut walls take the cutter's color,
+  matching export). Shading is Lambert + ambient.
+- **Silhouettes:** a soft silhouette from the minimum SDF along the ray (sampled inside the solid for
+  hit rays).
+  - **Finding: a soft-mask loss on all rays is biased.** Thin parts never reach `σ(−f/σ) = 1`, so
+    fitting inflates them. Starting at the exact ground truth it drifted to IoU 0.74–0.84. The loss
+    now acts only on rays whose hit/miss disagrees with the mask (IDR-style), and stays at IoU 1.0 at
+    the ground truth.
+  - **Finding: a training-ray guard is not enough.** On the chair, refinement improved the training
+    views while held-out views got much worse. Geometry is now early-stopped on held-out views (one
+    view is withheld from gradients). The best-validated geometry is kept, along with the final
+    colors.
+- **Image pipeline (`pipeline.py`):** views → carved volumetric proxy → structure search →
+  render-based refinement.
+  - Carving with depth rejects only points *in front of* the observed surface, so concavities visible
+    in depth are carved.
+  - Masks alone give the visual hull: the mug's cavity and the space under a tabletop are filled.
+  - **Cameras below the horizon are required**: upper-hemisphere orbits never see under furniture.
+- **Gaussian splats:** splat centers sit on the surface, so density thresholding gives a leaky shell
+  (IoU ≤ 0.47 even with tuning). `from_gaussians` therefore needs **oriented normals** (smallest-scale
+  axis, oriented toward a viewing camera) and builds a point-set signed distance from the k nearest
+  splats. Mug IoU > 0.85.
+
+## Benchmark v1 (`results/bench_v1`, 150 candidate fits per target, volume-IoU score)
+
+| target | mesh IoU | found |
+|---|---|---|
+| bracket | 1.000 | `subtract(box, instance(capsule))` (structure match) |
+| mug | 0.991 | **exact structure** |
+| bent pipe | 0.979 | `instance+dk(capsule)` ≡ `bend(capsule)` |
+| table | 0.977 | **exact structure** (`union(instance(legs), box)`) |
+| gear | 0.960 | disc minus instanced holes; **teeth missed** |
+| colonnade | 0.915 | columns instanced; arches missed |
+| twisted column | 0.911 | twist missed (box shaft) |
+| chair | 0.880 | seat + instanced legs/posts; slats missed |
+| stool | 0.842 | blob-and-carve |
+| fence | 0.835 | rails wrong |
+| bookshelf | 0.735 | frame `box − box` found; shelves/books missed |
+| lamp | 0.667 | blob-and-carve |
+
+Failure modes:
+1. **Thin parts** (slats, rails, teeth, shelves) barely change volume IoU, so under the complexity
+   penalty they are never worth adding.
+2. **Blob-and-carve**: one large primitive plus a chain of subtractions is a deep local optimum.
+3. **Deformers initialised at k ≈ 0** never reach a large twist.
+
+Fixes (not yet re-benchmarked across all 12 targets; the rerun was paused at 2/12):
+- the score mixes volume IoU with **surface recall** (fraction of target surface reproduced), which
+  weighs a part by its area;
+- deformer strength is **scanned** (cheap, no fitting) before a deform proposal is fitted.
+
+Image pipeline v1 (`results/images_v1`, 9 views, 128², 120 fits): 3D IoU vs ground truth
+
+| target | RGB only | RGB-D |
+|---|---|---|
+| table | 0.754 | **0.990** (exact structure, colors recovered, held-out depth MAE 0.001) |
+| mug | 0.414 (cavity invisible) | 0.704 (cavity found) |
+| chair | 0.298* | 0.830 (slats merged into a panel) |
+
+\* run before the held-out early-stop fix; refinement then made the geometry worse.
+
+## Infrastructure
+
+| piece | where | notes |
+|---|---|---|
+| CPU/CUDA | everywhere | `Graph.to`, `Target.to`, `ImageTarget.to`; fits move graphs to the target's device; `tests/test_device.py` runs on CUDA when available |
+| checkpoint / resume | `search(checkpoint_dir=…, resume=True)` | atomic `state.json` after every generation (beam, best, stats, RNG state, config, target fingerprint); a resumed run reproduces the uninterrupted one; resuming against a different target is refused |
+| run logs | `log.jsonl` | one line per generation (+ final): best score/IoU/complexity/structure, all children's scores |
+| configs | `config.py` | JSON round-trip of nested config dataclasses; unknown keys are errors |
+| CLI | `python -m mlrepl` | `search` (resumable, `--workers`, `--device`), `fit`, `validate`, `export`, `preview`, `config` |
+| validation | `Graph.validate()` | missing refs, cycles (iterative DFS), arity, unknown ops/params, param shapes, non-finite values; bad JSON fails at load |
+| robust fitting | `fit.py` | per-group learning rates (`lr_mult`: translation / rotation / size / deform / color), grad-norm clipping, NaN/Inf recovery (skip step or roll back + reset moments + halve LR), parameter clamps with **rotation wrapping** (`|w| ≤ π`, same rotation) |
+| parallel candidates | `parallel.ProcessEvaluator` | fits a generation's candidates in worker processes; proposals stay sequential, so results are identical to serial |
+| batched multi-start | `parallel.fit_multistart` | B jittered copies of one structure fitted in one pass via `torch.func.vmap`; best by exact-CSG score |
+| pluggable evaluation | `search(evaluator=…)` | serial (default), process pool, or anything mapping `(graph, origin)` jobs → candidates |
+
+**Timing** (`examples/timing.py`, 3 targets × 60 candidate fits, 2-core CPU, `results/timing/`)
+
+| run | total | fits/s | scores (table / mug / bracket) |
+|---|---|---|---|
+| before (serial) | 252 s | 0.75 | 0.059 / 0.149 / 0.079 |
+| after, serial | 266 s | 0.71 | 0.057 / 0.155 / 0.054 |
+| after, 2 workers | **167 s** | 1.13 | identical to serial |
+
+- **Parallel evaluation: 1.6×** on 2 cores, with no change in results.
+- **Robustness costs ~5 %** per fit (snapshot, finite checks, clamps).
+- **Fit changes are mixed:** per-group learning rates + clipping improved bracket and table, and the
+  mug was slightly worse at this budget.
+
+Negative results, kept as options but **off by default**:
+- **Plateau early stop**: the final low-learning-rate steps keep sharpening the shape after the
+  minibatch loss looks flat. Bracket IoU dropped 0.993 → 0.96 for a ≤ 25 % step saving.
+- **`torch.compile` on CPU**: 5× slower (17.7 s vs 3.3 s per fit). The annealed scalars trigger
+  recompiles, and small batches can't amortize compilation. Worth re-measuring on GPU with long fits.
+- **On a single GPU**, prefer the serial evaluator plus larger batches and `fit_multistart`; several
+  processes contending for one GPU rarely helps.

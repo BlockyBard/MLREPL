@@ -52,6 +52,19 @@ class FitConfig:
     prune_after: float = 0.15
     freeze_gauge: bool = True
     seed: int = 0
+    # robustness / speed
+    lr_mult: dict = field(default_factory=lambda: {"t": 1.0, "r": 1.5, "size": 0.8, "s": 0.8, "deform": 1.0,
+                                                   "color": 1.0})
+    grad_clip: float = 1.0  # global grad-norm clip (0 = off)
+    # Plateau early stop, only after annealing (tau == 0). OFF by default: measured on bracket/table, the
+    # last low-LR steps still sharpen the shape while the minibatch loss looks flat (IoU 0.993 -> 0.96)
+    # and the saving is <= 25% of steps. Useful for long fits where a few points of IoU don't matter.
+    early_stop: bool = False
+    plateau_window: int = 20
+    plateau_tol: float = 0.002  # relative EMA improvement per window below which we stop
+    max_nan_events: int = 8  # give up (keep last good params) after this many non-finite steps
+    pos_bound: float = 4.0  # |translation| clamp, in units of the target's half-diagonal
+    compile: bool = False  # torch.compile the loss for this fit (pays a per-structure compile cost; GPU + long fits)
     beta: float = 1e-3  # complexity weight in score
     w_surf_score: float = 0.5  # weight of surface recall vs volume IoU in the score
 
@@ -63,6 +76,8 @@ class FitResult:
     loss: float
     score: float
     history: list = field(default_factory=list)
+    steps_run: int = 0
+    nan_events: int = 0
 
 
 def iou(g: Graph, target: Target, ctx: Optional[EvalCtx] = None) -> float:
@@ -107,24 +122,63 @@ def _frozen(g: Graph) -> set:
     return fr
 
 
+def param_group(node, name: str) -> str:
+    """Learning-rate group of a raw parameter (see FitConfig.lr_mult)."""
+    if name == "logit":
+        return "logit"
+    if name == "color":
+        return "color"
+    if name in ("t", "r", "s"):
+        return name if node.spec.category in ("xform", "inst") else "size"
+    if name in ("k", "dk"):
+        return "deform"
+    return "size"
+
+
 def _make_opt(g: Graph, cfg: FitConfig):
     frozen = _frozen(g) if cfg.freeze_gauge else set()
     g.requires_grad_(True)
-    main, logits = [], []
+    groups: dict[str, list] = {}
     for nid in g.reachable():
         n = g.nodes[nid]
         for name, r in n.raw.items():
-            if (nid, name) in frozen:
+            if (nid, name) in frozen or (name == "logit" and not cfg.soft_gates):
                 r.requires_grad_(False)
                 continue
-            if name == "logit" and not cfg.soft_gates:
-                r.requires_grad_(False)
-                continue
-            (logits if name == "logit" else main).append(r)
-    groups = [{"params": main, "lr": cfg.lr}]
-    if logits:
-        groups.append({"params": logits, "lr": cfg.lr_logit})
-    return torch.optim.Adam(groups) if main or logits else None
+            groups.setdefault(param_group(n, name), []).append(r)
+    if not groups:
+        return None
+    pg = []
+    for key, params in groups.items():
+        base = cfg.lr_logit if key == "logit" else cfg.lr * cfg.lr_mult.get(key, 1.0)
+        pg.append({"params": params, "lr": base, "base_lr": base, "name": key})
+    return torch.optim.Adam(pg)
+
+
+@torch.no_grad()
+def clamp_params(g: Graph, pos_bound: float):
+    """Keep raw parameters in a numerically sane box. Rotations are wrapped (|w| <= pi gives the same
+    rotation), so they never drift into huge equivalent angles."""
+    for n in g.nodes.values():
+        for name, r in n.raw.items():
+            kind = n.spec.params[name].kind
+            if kind in ("pos", "unit"):
+                r.clamp_(-12.0, 12.0)
+            elif name == "t":
+                r.clamp_(-pos_bound, pos_bound)
+            elif name == "r":
+                nrm = r.norm(dim=-1, keepdim=True)
+                wrap = nrm > math.pi
+                if wrap.any():
+                    r.copy_(torch.where(wrap, r * (1 - 2 * math.pi / nrm.clamp(min=1e-6)), r))
+            elif name in ("k", "dk"):
+                r.clamp_(-8.0, 8.0)
+            elif name == "logit":
+                r.clamp_(-20.0, 20.0)
+
+
+def _all_finite(params) -> bool:
+    return all(bool(torch.isfinite(p).all()) for p in params)
 
 
 def loss_terms(g: Graph, batch, ctx: EvalCtx, eps: float, cfg: FitConfig, late: bool, a: float = 1.0):
@@ -267,7 +321,12 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
     g = g.clone().to(target.device)
     gen = torch.Generator().manual_seed(cfg.seed)
     opt = _make_opt(g, cfg)
-    hist = []
+    pos_bound = cfg.pos_bound * 0.5 * target.diag
+    hist, nan_events, steps_run = [], 0, 0
+    ema, ema_ref, lr_scale = None, None, 1.0
+    lossf = loss_terms
+    if cfg.compile:
+        lossf = torch.compile(loss_terms, dynamic=False, fullgraph=False)
     if opt is not None:
         for step in range(cfg.steps):
             f = step / max(cfg.steps - 1, 1)
@@ -277,16 +336,43 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
             ctx = EvalCtx(tau=tau, gate_scale=cfg.gate_scale, hard_gates=not cfg.soft_gates)
             late = f >= cfg.anneal_end
             batch = target.batch(cfg.nv, cfg.ns, gen)
-            lr_mult = cfg.lr_final + (1 - cfg.lr_final) * 0.5 * (1 + math.cos(math.pi * f))
-            for grp, base in zip(opt.param_groups, (cfg.lr, cfg.lr_logit)):
-                grp["lr"] = base * lr_mult
+            lr_mult = lr_scale * (cfg.lr_final + (1 - cfg.lr_final) * 0.5 * (1 + math.cos(math.pi * f)))
+            for grp in opt.param_groups:
+                grp["lr"] = grp["base_lr"] * lr_mult
             opt.zero_grad()
-            loss, terms = loss_terms(g, batch, ctx, eps, cfg, late, a)
+            loss, terms = lossf(g, batch, ctx, eps, cfg, late, a)
             if not loss.requires_grad:  # e.g. every instance pruned away: nothing left to optimize
                 break
+            steps_run += 1
+            params = [p for grp in opt.param_groups for p in grp["params"]]
+            if not torch.isfinite(loss):
+                nan_events += 1
+                if nan_events > cfg.max_nan_events:
+                    break
+                continue
             loss.backward()
+            if not _all_finite([p.grad for p in params if p.grad is not None]):
+                nan_events += 1
+                if nan_events > cfg.max_nan_events:
+                    break
+                continue
+            if cfg.grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(params, cfg.grad_clip)
+            snap = [p.detach().clone() for p in params]
             opt.step()
-            hist.append(loss.item())
+            if not _all_finite(params):  # roll back, reset moments, and halve the step size
+                with torch.no_grad():
+                    for p, s0 in zip(params, snap):
+                        p.copy_(s0)
+                opt.state.clear()
+                lr_scale *= 0.5
+                nan_events += 1
+                if nan_events > cfg.max_nan_events:
+                    break
+                continue
+            clamp_params(g, pos_bound)
+            lv = loss.item()
+            hist.append(lv)
             if _instance_nodes(g) and step > 0 and step % cfg.densify_every == 0:
                 changed = 0
                 if f > cfg.prune_after:
@@ -295,10 +381,19 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
                     changed += densify_instances(g, target, cfg, gen)
                 if changed:
                     opt = _make_opt(g, cfg)
+            if cfg.early_stop and late:  # schedule finished annealing: stop when the loss stops improving
+                ema = lv if ema is None else 0.9 * ema + 0.1 * lv
+                if ema_ref is None:
+                    ema_ref = (step, ema)
+                elif step - ema_ref[0] >= cfg.plateau_window:
+                    if ema_ref[1] - ema < cfg.plateau_tol * max(abs(ema_ref[1]), 1e-8):
+                        break
+                    ema_ref = (step, ema)
             if verbose and step % 50 == 0:
-                print(f"  step {step:4d} loss {loss.item():.4f} tau {tau:.3f} eps {eps:.3f} {terms}")
+                print(f"  step {step:4d} loss {lv:.4f} tau {tau:.3f} eps {eps:.3f} {terms}")
         # realizable endpoint: drop dead / useless instances
         prune_instances(g, target, cfg.prune_gain)
     g.requires_grad_(False)
     v = iou(g, target)
-    return FitResult(g, v, hist[-1] if hist else float("nan"), score(g, target, cfg.beta, v, cfg.w_surf_score), hist)
+    return FitResult(g, v, hist[-1] if hist else float("nan"), score(g, target, cfg.beta, v, cfg.w_surf_score), hist,
+                     steps_run, nan_events)

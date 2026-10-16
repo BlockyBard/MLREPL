@@ -20,25 +20,37 @@ PARAM_COST = 0.5
 INSTANCE_PARAM_COST = 0.5  # same as any param; instancing saves by sharing the prototype + node overhead
 
 
+class GraphError(ValueError):
+    """A graph that cannot be evaluated: bad references, cycles, wrong arity, malformed parameters."""
+
+
 class Node:
     __slots__ = ("id", "op", "inputs", "raw", "attrs")
 
     def __init__(self, id: str, op: str, inputs: Iterable[str] = (), params: Optional[dict] = None,
                  attrs: Optional[dict] = None, k: Optional[int] = None):
+        if op not in OPS:
+            raise GraphError(f"{id}: unknown op {op!r}")
         spec = OPS[op]
         self.id, self.op, self.inputs = id, op, list(inputs)
         self.attrs = dict(spec.attrs, **(attrs or {}))
         params = dict(params or {})
+        unknown = set(params) - set(spec.params)
+        if unknown:
+            raise GraphError(f"{id}: unknown param(s) {sorted(unknown)} for {op}")
         if spec.category == "inst" and k is None:
             k = len(params["t"]) if "t" in params else 1
         self.raw = {}
         for name, ps in spec.params.items():
             if name in params:
                 val = torch.as_tensor(params[name], dtype=torch.float32)
-                if ps.per_instance:
-                    val = val.reshape((-1,) + tuple(ps.shape))
-                else:
-                    val = val.reshape(ps.shape)
+                try:
+                    if ps.per_instance:
+                        val = val.reshape((-1,) + tuple(ps.shape))
+                    else:
+                        val = val.reshape(ps.shape)
+                except RuntimeError as e:
+                    raise GraphError(f"{id}.{name}: {e}") from None
             elif ps.optional:
                 continue
             else:
@@ -140,6 +152,67 @@ class Graph:
 
         visit(root)
         return order
+
+    def validate(self) -> "Graph":
+        """Check everything evaluation and fitting rely on; raises GraphError listing all problems.
+        Use on any graph from outside the search (hand-written, LLM-proposed, loaded from disk)."""
+        from .ops import OPS
+
+        errs = []
+        if self.output is None or self.output not in self.nodes:
+            raise GraphError(f"output {self.output!r} is not a node")
+        # references + cycles (iterative DFS, so a cyclic graph can't blow the recursion limit)
+        WHITE, GREY, BLACK = 0, 1, 2
+        color = {n: WHITE for n in self.nodes}
+        stack = [(self.output, iter(self.nodes[self.output].inputs))]
+        color[self.output] = GREY
+        while stack:
+            nid, it = stack[-1]
+            nxt = next(it, None)
+            if nxt is None:
+                color[nid] = BLACK
+                stack.pop()
+                continue
+            if nxt not in self.nodes:
+                errs.append(f"{nid}: input {nxt!r} does not exist")
+                continue
+            if color[nxt] == GREY:
+                errs.append(f"cycle through {nid} -> {nxt}")
+                continue
+            if color[nxt] == WHITE:
+                color[nxt] = GREY
+                stack.append((nxt, iter(self.nodes[nxt].inputs)))
+        if errs:
+            raise GraphError("; ".join(errs))
+        for nid in self.reachable():
+            n = self.nodes[nid]
+            if n.op not in OPS:
+                errs.append(f"{nid}: unknown op {n.op!r}")
+                continue
+            spec = OPS[n.op]
+            na = len(n.inputs)
+            if spec.arity is None and na < 1:
+                errs.append(f"{nid}: {n.op} needs at least one input")
+            elif spec.arity is not None and na != spec.arity:
+                errs.append(f"{nid}: {n.op} takes {spec.arity} input(s), got {na}")
+            K = n.raw["t"].shape[0] if spec.category == "inst" and "t" in n.raw else None
+            for pname, ps in spec.params.items():
+                if pname not in n.raw:
+                    if not ps.optional:
+                        errs.append(f"{nid}: missing param {pname!r}")
+                    continue
+                r = n.raw[pname]
+                want = ((K,) if ps.per_instance else ()) + tuple(ps.shape)
+                if tuple(r.shape) != want:
+                    errs.append(f"{nid}.{pname}: shape {tuple(r.shape)} != {want}")
+                if not torch.isfinite(r).all():
+                    errs.append(f"{nid}.{pname}: non-finite values")
+            for pname in n.raw:
+                if pname not in spec.params:
+                    errs.append(f"{nid}: unknown param {pname!r} for {n.op}")
+        if errs:
+            raise GraphError("; ".join(errs))
+        return self
 
     def parents(self) -> dict[str, list[str]]:
         par = {n: [] for n in self.nodes}

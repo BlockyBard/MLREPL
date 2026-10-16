@@ -556,42 +556,149 @@ def initial_candidates(target: Target, n_local: int = 2, seed: int = 0) -> list[
     return out
 
 
+# ---------------------------------------------------------------------------
+# Checkpointing
+# ---------------------------------------------------------------------------
+
+
+def _cand_to_dict(c: Candidate) -> dict:
+    return {"graph": c.graph.to_dict(), "score": c.score, "iou": c.iou, "origin": c.origin, "gen": c.gen}
+
+
+def _cand_from_dict(d: dict, device) -> Candidate:
+    return Candidate(Graph.from_dict(d["graph"]).to(device), d["score"], d["iou"], d["origin"], d["gen"])
+
+
+def target_fingerprint(target: Target) -> str:
+    import hashlib
+
+    h = hashlib.sha1()
+    for t in (target.points, target.occ, target.surface):
+        h.update(t.detach().cpu().numpy().astype("float32").tobytes()[:1 << 20])
+        h.update(str(tuple(t.shape)).encode())
+    return h.hexdigest()[:16]
+
+
+def _atomic_json(path: str, obj):
+    import json
+    import os
+
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f)
+    os.replace(tmp, path)
+
+
+def _jsonl(path: str, obj):
+    import json
+
+    with open(path, "a") as f:
+        f.write(json.dumps(obj) + "\n")
+
+
+# ---------------------------------------------------------------------------
+# Driver
+# ---------------------------------------------------------------------------
+
+Evaluator = Callable[[list, Target, "SearchConfig", int], list]
+"""(list of (graph, origin)), target, cfg, gen -> list of Candidate (same order). Lets callers swap in
+parallel/batched evaluation (see parallel.py) without touching the search logic."""
+
+
+def serial_evaluator(jobs: list, target: Target, cfg: "SearchConfig", gen: int) -> list:
+    return [_evaluate(g, target, cfg.fit, cfg.beta, origin, gen) for g, origin in jobs]
+
+
 def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[list[Graph]] = None,
-           log: Callable = print) -> SearchResult:
+           log: Callable = print, checkpoint_dir: Optional[str] = None, resume: bool = False,
+           evaluator: Optional[Evaluator] = None) -> SearchResult:
+    """Beam search over graph structures.
+
+    checkpoint_dir: if set, the full search state is written there after every generation
+    (state.json, atomic) and one line per generation is appended to log.jsonl.
+    resume: continue from checkpoint_dir/state.json (the target must be the same; checked by fingerprint).
+            Pass cfg to change the budget (generations / max_evals) of the resumed run; omit it to reuse
+            the checkpointed config.
+    evaluator: how a generation's candidates get fitted (default: one after another).
+    """
+    import os
+
+    from .config import from_dict as cfg_from_dict, to_dict as cfg_to_dict
+
+    cfg_given = cfg is not None
     cfg = cfg or SearchConfig()
+    evaluator = evaluator or serial_evaluator
     global W_SURF
     W_SURF = cfg.w_surf_score
-    rng = np.random.default_rng(cfg.seed)
-    torch.manual_seed(cfg.seed)
-    t0 = time.time()
+    dev = target.device
+    fp = target_fingerprint(target)
+    state_path = os.path.join(checkpoint_dir, "state.json") if checkpoint_dir else None
+    log_path = os.path.join(checkpoint_dir, "log.jsonl") if checkpoint_dir else None
+    if checkpoint_dir:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+
     muts = dict(MUTATIONS)
     muts["add"] = lambda g, res, rng: m_add(g, res, rng, target)
     muts["deform"] = lambda g, res, rng: m_deform(g, res, rng, target)
     if cfg.library:
         muts["macro"] = lambda g, res, rng: m_macro(g, res, rng, cfg.library)
-    stats = {k: [0, 0, 0, 0] for k in muts}
-    stats["init"] = [0, 0, 0, 0]
-    evaluated = 0
-    seeds = list(init) if init else initial_candidates(target)
-    if cfg.library and cfg.macro_init:
-        from .abstraction import instantiate
-
-        inside = target.eval_points[target.eval_occ > 0.5].detach().cpu().numpy()
-        for mac in cfg.library:
-            g0 = Graph()
-            g0.output = instantiate(g0, mac, inside)
-            seeds.append(g0)
-    pool = []
-    for g in seeds:
-        pool.append(_evaluate(g, target, cfg.fit, cfg.beta, "init", 0))
-        evaluated += 1
-    beam = _select(pool, cfg.beam)
-    best = beam[0]
-    history = [_hist(best, 0)]
-    log(f"gen 0  best score {best.score:.4f} iou {best.iou:.3f}  {signature(best.graph)}")
-    stall = 0
     names = list(muts)
     prior = np.array([cfg.weights.get(k, 0.0) for k in names])
+
+    if resume and state_path and os.path.exists(state_path):
+        import json
+
+        with open(state_path) as f:
+            st = json.load(f)
+        if st["target_fingerprint"] != fp:
+            raise ValueError("checkpoint was made for a different target")
+        if not cfg_given and st.get("config"):  # an explicit cfg wins, e.g. to extend the budget on resume
+            cfg = cfg_from_dict(SearchConfig, st["config"])
+        rng = np.random.default_rng()
+        rng.bit_generator.state = st["rng"]
+        torch.manual_seed(cfg.seed + st["gen"])
+        beam = [_cand_from_dict(c, dev) for c in st["beam"]]
+        best = _cand_from_dict(st["best"], dev)
+        stats = {k: list(v) for k, v in st["stats"].items()}
+        for k in names:
+            stats.setdefault(k, [0, 0, 0, 0])
+        history, evaluated, stall, start_gen = st["history"], st["evaluated"], st["stall"], st["gen"] + 1
+        t0 = time.time() - st["elapsed"]
+        done_searching = st.get("phase") != "search"
+        log(f"resumed at gen {st['gen']} (evaluated {evaluated}, best {best.score:.4f}, phase {st.get('phase')})")
+        if st.get("phase") == "done":
+            return SearchResult(best, history, stats, evaluated, st["elapsed"])
+    else:
+        rng = np.random.default_rng(cfg.seed)
+        torch.manual_seed(cfg.seed)
+        t0 = time.time()
+        stats = {k: [0, 0, 0, 0] for k in names}
+        stats["init"] = [0, 0, 0, 0]
+        seeds = list(init) if init else initial_candidates(target)
+        if cfg.library and cfg.macro_init:
+            from .abstraction import instantiate
+
+            inside = target.eval_points[target.eval_occ > 0.5].detach().cpu().numpy()
+            for mac in cfg.library:
+                g0 = Graph()
+                g0.output = instantiate(g0, mac, inside)
+                seeds.append(g0)
+        pool = evaluator([(g, "init") for g in seeds], target, cfg, 0)
+        evaluated = len(pool)
+        beam = _select(pool, cfg.beam)
+        best = beam[0]
+        history = [_hist(best, 0)]
+        stall, start_gen, done_searching = 0, 1, False
+        log(f"gen 0  best score {best.score:.4f} iou {best.iou:.3f}  {signature(best.graph)}")
+
+    def checkpoint(gen: int, phase: str):
+        if not state_path:
+            return
+        _atomic_json(state_path, {
+            "version": 1, "gen": gen, "phase": phase, "evaluated": evaluated, "stall": stall,
+            "elapsed": time.time() - t0, "rng": rng.bit_generator.state, "target_fingerprint": fp,
+            "beam": [_cand_to_dict(c) for c in beam], "best": _cand_to_dict(best), "stats": stats,
+            "history": history, "config": cfg_to_dict(cfg)})
 
     def weights():
         if not cfg.adaptive:
@@ -600,8 +707,15 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
         rate = np.array([(stats[k][2] + 1) / (stats[k][1] + 4) for k in names])
         w = prior * np.maximum(rate, 0.05)
         return w / w.sum()
-    for gen in range(1, cfg.generations + 1):
-        children = []
+
+    if not resume or start_gen == 1:
+        checkpoint(0, "search")
+    gen = start_gen - 1
+    for gen in range(start_gen, cfg.generations + 1):
+        if done_searching or stall >= cfg.patience or _out_of_budget(cfg, t0, evaluated):
+            break
+        # 1) propose (sequential, rng-driven: keeps runs reproducible regardless of evaluator)
+        jobs, parents = [], []
         for parent in beam:
             res = residual(parent.graph, target)
             for _ in range(cfg.proposals_per_parent):
@@ -610,17 +724,20 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
                     stats[name][0] += 1
                     child = muts[name](parent.graph, res, rng)
                     if child is not None:
+                        jobs.append((child, name))
+                        parents.append(parent)
+                        stats[name][1] += 1
                         break
-                else:
-                    continue
-                stats[name][1] += 1
-                c = _evaluate(child, target, cfg.fit, cfg.beta, name, gen)
-                evaluated += 1
-                if c.score < parent.score:
-                    stats[name][2] += 1
-                children.append(c)
-            if _out_of_budget(cfg, t0, evaluated):
-                break
+        if cfg.max_evals > 0:  # never overshoot an evaluation budget
+            keep = max(cfg.max_evals - evaluated, 0)
+            jobs, parents = jobs[:keep], parents[:keep]
+        # 2) evaluate (serial, parallel or batched)
+        children = evaluator(jobs, target, cfg, gen)
+        evaluated += len(children)
+        for c, parent in zip(children, parents):
+            if c.score < parent.score:
+                stats[c.origin][2] += 1
+        # 3) select
         beam = _select(beam + children, cfg.beam)
         for c in beam:
             if c.gen == gen:
@@ -630,10 +747,16 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
         else:
             stall += 1
         history.append(_hist(best, gen))
+        elapsed = time.time() - t0
         log(f"gen {gen}  best score {best.score:.4f} iou {best.iou:.3f} via {best.origin}  {signature(best.graph)}"
-            f"  [{time.time() - t0:.0f}s]")
-        if stall >= cfg.patience or _out_of_budget(cfg, t0, evaluated):
-            break
+            f"  [{elapsed:.0f}s]")
+        if log_path:
+            _jsonl(log_path, {"gen": gen, "evaluated": evaluated, "seconds": round(elapsed, 2),
+                              "best_score": best.score, "best_iou": best.iou, "complexity": best.graph.complexity(),
+                              "signature": signature(best.graph),
+                              "children": [[c.origin, round(c.score, 5)] for c in children]})
+        checkpoint(gen, "search")
+    checkpoint(gen, "simplify")
     if cfg.simplify:
         best, n_eval = simplify(best, target, cfg, log)
         evaluated += n_eval
@@ -641,6 +764,11 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
     final = _evaluate(best.graph, target, cfg.final_fit, cfg.beta, best.origin, best.gen)
     if final.score > best.score:
         final = best
+    best = final
+    checkpoint(gen, "done")
+    if log_path:
+        _jsonl(log_path, {"final": True, "evaluated": evaluated, "seconds": round(time.time() - t0, 2),
+                          "best_score": final.score, "best_iou": final.iou, "signature": signature(final.graph)})
     return SearchResult(final, history, stats, evaluated, time.time() - t0)
 
 

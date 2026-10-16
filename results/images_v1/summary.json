@@ -1,0 +1,98 @@
+{
+ "mug/rgb": {
+  "iou3d_proxy_search": 0.3889,
+  "iou3d_final": 0.4138,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.9543,
+   "depth_mae": 0.0995,
+   "psnr": 18.9706
+  },
+  "held_out_final": {
+   "mask_iou": 0.994,
+   "depth_mae": 0.0798,
+   "psnr": 19.704
+  },
+  "structure": "union(instance(cylinder),instance(torus))",
+  "seconds": 247.3
+ },
+ "mug/rgbd": {
+  "iou3d_proxy_search": 0.6397,
+  "iou3d_final": 0.7042,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.9454,
+   "depth_mae": 0.0118,
+   "psnr": 21.1436
+  },
+  "held_out_final": {
+   "mask_iou": 0.958,
+   "depth_mae": 0.0042,
+   "psnr": 25.4853
+  },
+  "structure": "union(subtract(transform(cylinder),transform(capsule)),transform(box),transform(cylinder))",
+  "seconds": 299.9
+ },
+ "table/rgb": {
+  "iou3d_proxy_search": 0.645,
+  "iou3d_final": 0.7538,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.9652,
+   "depth_mae": 0.0385,
+   "psnr": 16.3503
+  },
+  "held_out_final": {
+   "mask_iou": 0.9861,
+   "depth_mae": 0.0415,
+   "psnr": 25.2623
+  },
+  "structure": "union(instance(cylinder),instance+dk(box),transform(box),transform(capsule))",
+  "seconds": 437.1
+ },
+ "table/rgbd": {
+  "iou3d_proxy_search": 0.9206,
+  "iou3d_final": 0.9901,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.9671,
+   "depth_mae": 0.0063,
+   "psnr": 16.2895
+  },
+  "held_out_final": {
+   "mask_iou": 0.9864,
+   "depth_mae": 0.0011,
+   "psnr": 26.5143
+  },
+  "structure": "union(instance(capsule),transform(box))",
+  "seconds": 219.2
+ },
+ "chair/rgb": {
+  "iou3d_proxy_search": 0.4386,
+  "iou3d_final": 0.2977,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.7752,
+   "depth_mae": 0.0989,
+   "psnr": 15.0807
+  },
+  "held_out_final": {
+   "mask_iou": 0.6274,
+   "depth_mae": 0.1592,
+   "psnr": 12.047
+  },
+  "structure": "union(instance(capsule),transform(box),transform(box),transform(capsule),transform(capsule))",
+  "seconds": 335.5
+ },
+ "chair/rgbd": {
+  "iou3d_proxy_search": 0.7874,
+  "iou3d_final": 0.8297,
+  "held_out_before_render_fit": {
+   "mask_iou": 0.722,
+   "depth_mae": 0.038,
+   "psnr": 13.8993
+  },
+  "held_out_final": {
+   "mask_iou": 0.7713,
+   "depth_mae": 0.0293,
+   "psnr": 14.8626
+  },
+  "structure": "union(instance(cylinder),transform(box),transform(box))",
+  "seconds": 319.9
+ }
+}
