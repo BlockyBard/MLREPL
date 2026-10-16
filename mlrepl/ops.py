@@ -94,8 +94,9 @@ def _sphere(v, ch, p, ctx):
 
 
 def _box(v, ch, p, ctx):
-    rnd = v["round"][..., 0]
-    b = torch.clamp(v["b"] - rnd[..., None], min=1e-4)
+    # rounding can't exceed the smallest half-extent (same clamp as the mesh realization)
+    rnd = torch.minimum(v["round"][..., 0], 0.999 * v["b"].min(-1).values)
+    b = torch.clamp(v["b"] - rnd[..., None], min=1e-6)
     q = p.abs() - b
     outside = torch.clamp(q, min=0).norm(dim=-1)
     inside = torch.clamp(q.max(-1).values, max=0)

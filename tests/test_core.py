@@ -138,3 +138,14 @@ def test_mining_finds_shared_motif():
     g = Graph()
     g.output = instantiate(g, lib[0], np.random.default_rng(0).uniform(-0.5, 0.5, (200, 3)))
     assert torch.isfinite(g.sdf(torch.rand(10, 3))).all()
+
+
+def test_box_rounding_larger_than_extent_stays_realizable():
+    # regression: found by the benchmark (bent pipe), SDF allowed round > min(b), mesh clamped it
+    g = Graph()
+    b = g.add("box", params={"b": [0.13, 0.77, 0.13], "round": [0.2]})
+    g.output = g.add("bend", [b], params={"k": [1.4]})
+    P = torch.rand(3000, 3) * 2.2 - 1.1
+    occ_sdf = (g.sdf(P) < 0).numpy()
+    occ_mesh = mesh_contains(realize(g), P.numpy().astype(np.float64))
+    assert (occ_sdf == occ_mesh).mean() > 0.995
