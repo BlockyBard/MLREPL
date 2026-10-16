@@ -35,6 +35,8 @@ def main():
     ap.add_argument("--budget", type=float, default=300)
     ap.add_argument("--generations", type=int, default=12)
     ap.add_argument("--only", default="")
+    ap.add_argument("--n_eval", type=int, default=60000)
+    ap.add_argument("--max_evals", type=int, default=0, help="budget in candidate fits (overrides --budget)")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
     torch.set_num_threads(max(1, os.cpu_count() or 1))
@@ -43,9 +45,9 @@ def main():
     summary = {}
     for name in names:
         gt = library.ALL[name]()
-        T = from_graph(gt, n_eval=40000, seed=a.seed)
+        T = from_graph(gt, n_eval=a.n_eval, n_vol=30000, seed=a.seed)
         t0 = time.time()
-        r = search(T, SearchConfig(generations=a.generations, time_budget=a.budget, seed=a.seed),
+        r = search(T, SearchConfig(generations=a.generations, time_budget=a.budget, max_evals=a.max_evals, seed=a.seed),
                    log=lambda s: print(f"[{name}] {s}", flush=True))
         g = r.best.graph
         g.to_json(os.path.join(a.out, f"{name}.found.json"))

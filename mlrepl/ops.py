@@ -31,6 +31,54 @@ class EvalCtx:
     tau: float = 0.0
     gate_scale: float = 0.05
     hard_gates: bool = False
+    color: bool = False  # if True, fields carry (d, r, g, b) in the last dim; booleans pick/blend color by distance
+
+
+# ---------------------------------------------------------------------------
+# Field helpers: the same op code serves plain distance fields (...,) and
+# color-carrying fields (..., 4) where channel 0 is distance.
+# ---------------------------------------------------------------------------
+
+
+def fdist(x, ctx):
+    return x[..., 0] if ctx.color else x
+
+
+def fscale(x, s, ctx):
+    """Multiply the distance channel only (s broadcasts against the distance shape)."""
+    if not ctx.color:
+        return x * s
+    return torch.cat([(x[..., 0] * s)[..., None], x[..., 1:]], -1)
+
+
+def fadd(x, a, ctx):
+    if not ctx.color:
+        return x + a
+    return torch.cat([(x[..., 0] + a)[..., None], x[..., 1:]], -1)
+
+
+def fneg(x, ctx):
+    return fscale(x, -1.0, ctx)
+
+
+def fcombine(xs: torch.Tensor, tau: float, ctx, mode: str = "min") -> torch.Tensor:
+    """min/max over dim 0 (soft if tau > 0). Color follows the winning child (soft-weighted if tau > 0)."""
+    d = fdist(xs, ctx)
+    sgn = 1.0 if mode == "min" else -1.0
+    d = d * sgn
+    if tau <= 0:
+        dm, idx = d.min(0)
+    else:
+        dm = -tau * torch.logsumexp(-d / tau, 0)
+    dm = dm * sgn
+    if not ctx.color:
+        return dm
+    if tau <= 0:
+        c = torch.gather(xs[..., 1:], 0, idx[None, ..., None].expand(1, *idx.shape, xs.shape[-1] - 1))[0]
+    else:
+        w = torch.softmax(-d / tau, 0)
+        c = (w[..., None] * xs[..., 1:]).sum(0)
+    return torch.cat([dm[..., None], c], -1)
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +89,7 @@ class EvalCtx:
 @dataclass
 class ParamSpec:
     shape: tuple
-    kind: str = "real"  # real | pos
+    kind: str = "real"  # real | pos | unit
     default: object = 0.0
     per_instance: bool = False  # leading K dimension (instance ops)
     optional: bool = False
@@ -51,11 +99,16 @@ class ParamSpec:
         if self.kind == "pos":
             v = torch.clamp(v, min=1e-6)
             return torch.where(v > 20, v, torch.log(torch.expm1(v)))
+        if self.kind == "unit":
+            v = torch.clamp(v, 1e-4, 1 - 1e-4)
+            return torch.log(v / (1 - v))
         return v.clone()
 
     def from_raw(self, r: torch.Tensor) -> torch.Tensor:
         if self.kind == "pos":
             return F.softplus(r)
+        if self.kind == "unit":
+            return torch.sigmoid(r)
         return r
 
     def default_value(self, k: int = 1) -> torch.Tensor:
@@ -142,6 +195,8 @@ register(OpSpec("capsule", "prim", 0, {"r": P1(0.2), "h": P1(0.4)}, _capsule, "Y
 register(OpSpec("torus", "prim", 0, {"R": P1(0.5), "r": P1(0.15)}, _torus, "torus in XZ plane"))
 
 PRIMITIVES = [n for n, s in OPS.items() if s.category == "prim"]
+for _p in PRIMITIVES:  # optional learnable base color (appearance fitting from images)
+    OPS[_p].params["color"] = ParamSpec((3,), "unit", 0.7, optional=True)
 
 # ---------------------------------------------------------------------------
 # Transform: p_local = R^T (p - t) / s ;  d = s * child(p_local)
@@ -162,7 +217,7 @@ def _to_local(p, t, r, s):
 def _transform(v, ch, p, ctx):
     t, r, s = v["t"][None], v["r"][None], v["s"][None]
     q = _to_local(p, t, r, s)[0]
-    return ch[0](q) * s[0, 0]
+    return fscale(ch[0](q), s[0, 0], ctx)
 
 
 register(
@@ -184,7 +239,7 @@ register(
 def _make_deform(kind):
     def fn(v, ch, p, ctx):
         q, sc = apply_deform_chain_inverse(p, {kind: v["k"][..., 0]})
-        return ch[0](q) * sc
+        return fscale(ch[0](q), sc, ctx)
 
     return fn
 
@@ -209,15 +264,16 @@ def softmax(ds: torch.Tensor, tau: float, dim: int = 0) -> torch.Tensor:
 
 
 def _union(v, ch, p, ctx):
-    return softmin(torch.stack([c(p) for c in ch], 0), ctx.tau)
+    return fcombine(torch.stack([c(p) for c in ch], 0), ctx.tau, ctx, "min")
 
 
 def _intersect(v, ch, p, ctx):
-    return softmax(torch.stack([c(p) for c in ch], 0), ctx.tau)
+    return fcombine(torch.stack([c(p) for c in ch], 0), ctx.tau, ctx, "max")
 
 
 def _subtract(v, ch, p, ctx):
-    return softmax(torch.stack([ch[0](p), -ch[1](p)], 0), ctx.tau)
+    # cut walls take the cutter's color (matches export, where hole walls keep the cutter's material)
+    return fcombine(torch.stack([ch[0](p), fneg(ch[1](p), ctx)], 0), ctx.tau, ctx, "max")
 
 
 register(OpSpec("union", "bool", None, {}, _union, "n-ary union"))
@@ -234,7 +290,8 @@ def _instance(v, ch, p, ctx):
     t = v["t"]
     K = t.shape[0]
     if K == 0:
-        return torch.full(p.shape[:-1], BIG, dtype=p.dtype)
+        out = torch.full(p.shape[:-1], BIG, dtype=p.dtype)
+        return torch.cat([out[..., None], torch.full(p.shape[:-1] + (3,), 0.5)], -1) if ctx.color else out
     s = v["s"]
     q = _to_local(p, t, v["r"], s)  # K,*B,3
     nb = p.dim() - 1
@@ -243,13 +300,14 @@ def _instance(v, ch, p, ctx):
     if "dk" in v:  # (K,3): taper, twist, bend
         ks = {kind: v["dk"][:, i].view(view) for i, kind in enumerate(DEFORM_KINDS)}
         q, scale = apply_deform_chain_inverse(q, ks)
-    d = ch[0](q) * scale * s.view(view)
+    x = fscale(ch[0](q), scale * s.view(view), ctx)
     logit = v["logit"].view(view)
     if ctx.hard_gates:
-        d = torch.where(logit >= 0, d, torch.full_like(d, BIG))
+        dead = (logit < 0).to(q.dtype) * BIG
+        x = fadd(x, dead.expand_as(fdist(x, ctx)), ctx)
     else:
-        d = d + ctx.gate_scale * F.softplus(-logit)  # = -gate_scale * log(sigmoid(logit))
-    return softmin(d, ctx.tau, 0)
+        x = fadd(x, ctx.gate_scale * F.softplus(-logit), ctx)  # = -gate_scale * log(sigmoid(logit))
+    return fcombine(x, ctx.tau, ctx, "min")
 
 
 register(

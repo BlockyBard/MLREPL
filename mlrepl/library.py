@@ -107,3 +107,101 @@ ALL = {
     "bracket": bracket,
     "stool": stool,
 }
+
+
+# ---------------------------------------------------------------------------
+# Harder cases: more parts, rotated/scaled instances, instances under CSG, nested booleans
+# ---------------------------------------------------------------------------
+
+
+def _inst(g, child, ts, rs=None, ss=None, dk=None):
+    n = len(ts)
+    p = {"t": ts, "r": rs or [[0, 0, 0]] * n, "s": [[s] for s in (ss or [1.0] * n)], "logit": [3.0] * n}
+    if dk is not None:
+        p["dk"] = dk
+    return g.add("instance", [child], params=p)
+
+
+def chair() -> Graph:
+    g = Graph()
+    seat = g.placed("box", pos=(0, -0.05, 0), b=[0.45, 0.05, 0.45], attrs={"material": WOOD})
+    leg = g.add("cylinder", params={"r": [0.04], "h": [0.42]}, attrs={"material": WOOD})
+    legs = _inst(g, leg, [[x, -0.52, z] for x in (-0.38, 0.38) for z in (-0.38, 0.38)])
+    post = g.add("box", params={"b": [0.04, 0.42, 0.04], "round": [0.001]}, attrs={"material": WOOD})
+    posts = _inst(g, post, [[-0.38, 0.42, -0.38], [0.38, 0.42, -0.38]])
+    slat = g.add("box", params={"b": [0.36, 0.04, 0.025], "round": [0.001]}, attrs={"material": WOOD})
+    slats = _inst(g, slat, [[0, y, -0.38] for y in (0.25, 0.48, 0.71)])
+    g.output = g.add("union", [seat, legs, posts, slats])
+    return g
+
+
+def bookshelf() -> Graph:
+    g = Graph()
+    outer = g.placed("box", pos=(0, 0, 0), b=[0.6, 0.92, 0.26], attrs={"material": WOOD})
+    inner = g.placed("box", pos=(0, 0, 0.06), b=[0.55, 0.87, 0.26])
+    frame = g.add("subtract", [outer, inner])
+    shelf = g.add("box", params={"b": [0.55, 0.025, 0.22], "round": [0.001]}, attrs={"material": WOOD})
+    shelves = _inst(g, shelf, [[0, y, 0.02] for y in (-0.45, 0.0, 0.45)])
+    book = g.add("box", params={"b": [0.035, 0.16, 0.14], "round": [0.001]},
+                 attrs={"material": {"base_color": [0.6, 0.15, 0.15], "roughness": 0.8}})
+    rng = [(-0.42, -0.45, 1.0, 0.0), (-0.33, -0.45, 0.9, 0.0), (-0.24, -0.45, 1.1, 0.0), (0.1, -0.45, 1.0, 0.25),
+           (-0.4, 0.0, 1.15, 0.0), (-0.3, 0.0, 0.85, 0.0), (0.3, 0.0, 1.0, 0.0), (0.39, 0.0, 1.05, 0.0),
+           (-0.1, 0.45, 0.95, 0.0), (0.0, 0.45, 1.1, 0.0)]
+    ts = [[x, y + 0.025 + 0.16 * s, 0.03] for x, y, s, _ in rng]
+    rs = [[0, 0, lean] for *_, lean in rng]
+    books = _inst(g, book, ts, rs, [s for _, _, s, _ in rng])
+    g.output = g.add("union", [frame, shelves, books])
+    return g
+
+
+def gear(n_teeth: int = 12) -> Graph:
+    g = Graph()
+    disc = g.add("cylinder", params={"r": [0.55], "h": [0.12]}, attrs={"material": METAL})
+    tooth = g.add("box", params={"b": [0.09, 0.12, 0.08], "round": [0.001]}, attrs={"material": METAL})
+    th = [2 * math.pi * i / n_teeth for i in range(n_teeth)]
+    teeth = _inst(g, tooth, [[0.6 * math.cos(a), 0, 0.6 * math.sin(a)] for a in th], [[0, -a, 0] for a in th])
+    body = g.add("union", [disc, teeth])
+    axle = g.add("cylinder", params={"r": [0.13], "h": [0.3]})
+    hole = g.add("cylinder", params={"r": [0.09], "h": [0.3]})
+    holes = _inst(g, hole, [[0.33 * math.cos(a), 0, 0.33 * math.sin(a)] for a in
+                            (math.pi / 4, 3 * math.pi / 4, 5 * math.pi / 4, 7 * math.pi / 4)])
+    g.output = g.add("subtract", [body, g.add("union", [axle, holes])])
+    return g
+
+
+def lamp() -> Graph:
+    g = Graph()
+    base = g.placed("cylinder", pos=(0, -0.88, 0), r=[0.32], h=[0.05], attrs={"material": METAL})
+    arm_p = g.add("capsule", params={"r": [0.04], "h": [0.55]}, attrs={"material": METAL})
+    arm = g.add("transform", [g.add("bend", [arm_p], params={"k": [1.1]})],
+                params={"t": [0, -0.3, 0], "r": [0, 0, 0], "s": [1.0]})
+    outer = g.add("cylinder", params={"r": [0.3], "h": [0.2]}, attrs={"material": CERAMIC})
+    inner = g.add("cylinder", params={"r": [0.27], "h": [0.25]})
+    shade_hollow = g.add("taper", [g.add("subtract", [outer, inner])], params={"k": [-1.6]})
+    shade = g.add("transform", [shade_hollow], params={"t": [0.42, 0.42, 0], "r": [0, 0, 0], "s": [1.0]})
+    g.output = g.add("union", [base, arm, shade])
+    return g
+
+
+def colonnade(n_cols: int = 5) -> Graph:
+    g = Graph()
+    base = g.placed("box", pos=(0, -0.86, 0), b=[0.95, 0.06, 0.3], attrs={"material": STONE})
+    col = g.add("cylinder", params={"r": [0.075], "h": [0.62]}, attrs={"material": STONE})
+    xs = [-0.76 + 1.52 * i / (n_cols - 1) for i in range(n_cols)]
+    cols = _inst(g, col, [[x, -0.18, 0] for x in xs])
+    lintel = g.placed("box", pos=(0, 0.62, 0), b=[0.95, 0.2, 0.3], attrs={"material": STONE})
+    arch = g.add("cylinder", params={"r": [0.15], "h": [0.4]})
+    mids = [0.5 * (a + b) for a, b in zip(xs, xs[1:])]
+    arches = _inst(g, arch, [[x, 0.42, 0] for x in mids], [[math.pi / 2, 0, 0]] * len(mids))
+    g.output = g.add("union", [base, cols, g.add("subtract", [lintel, arches])])
+    return g
+
+
+HARD = {
+    "chair": chair,
+    "bookshelf": bookshelf,
+    "gear": gear,
+    "lamp": lamp,
+    "colonnade": colonnade,
+}
+ALL.update(HARD)

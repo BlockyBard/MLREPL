@@ -100,7 +100,10 @@ def realize(g: Graph, root=None, opts: RealizeOpts = None, mats: MaterialTable =
         cat = n.spec.category
         if cat == "prim":
             m = _primitive(n.op, v, opts).as_original()
-            mats.by_oid[m.original_id()] = (nid, mats.material_for(nid, n.attrs))
+            mat = mats.material_for(nid, n.attrs)
+            if "color" in v:  # fitted appearance overrides authored material color
+                mat["base_color"] = tuple(float(x) for x in v["color"])
+            mats.by_oid[m.original_id()] = (nid, mat)
         elif cat == "xform":
             m = rec(n.inputs[0]).transform(_affine(v["t"], v["r"], v["s"][0]))
         elif cat == "deform":

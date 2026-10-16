@@ -203,12 +203,46 @@ def _pick_part(parts, rng):
     return local_crop(part, rng) if rng.random() < 0.5 else part
 
 
-def m_add(g, res, rng):
+def best_kind(part: np.ndarray, target: Target, rng, g: Optional[Graph] = None, kinds=None, steps: int = 40) -> str:
+    """Pick the primitive kind that best explains a residual region in isolation. The local problem
+    uses the target's (surface-concentrated) volume samples inside the region's box, minus the points
+    the current graph already covers (union makes those don't-care). Each kind is moment-matched,
+    quick-fitted, and compared by local IoU. Cheap: a few hundred points, 40 steps."""
+    from .fit import FitConfig, fit as _fit
+
+    kinds = kinds or PRIMITIVES
+    lo, hi = part.min(0), part.max(0)
+    pad = 0.25 * (hi - lo) + 0.03
+    lo_t, hi_t = torch.tensor(lo - pad, dtype=torch.float32), torch.tensor(hi + pad, dtype=torch.float32)
+    P = target.points
+    m = ((P >= lo_t) & (P <= hi_t)).all(1)
+    if g is not None and m.any():
+        with torch.no_grad():
+            m[m.clone()] &= g.sdf(P[m], EvalCtx(hard_gates=True)) >= 0
+    if m.sum() < 30 or target.occ[m].sum() < 10:
+        return str(rng.choice(kinds))
+    pts, occ = P[m], target.occ[m]
+    S = target.surface
+    ms = ((S >= lo_t) & (S <= hi_t)).all(1)
+    surf = S[ms] if ms.sum() >= 8 else pts[occ > 0.5][:64]
+    loc = Target(pts, occ, surf, lo_t, hi_t, pts, occ)
+    best = (-1.0, kinds[0])
+    for kind in kinds:
+        h = Graph()
+        h.output = _placed(h, kind, part)
+        r = _fit(h, loc, FitConfig(steps=steps, nv=1024, ns=256, densify_every=10 ** 9))
+        if r.iou > best[0]:
+            best = (r.iou, kind)
+    return best[1]
+
+
+def m_add(g, res, rng, target=None):
     if not res.fn_parts:
         return None
     part = _pick_part(res.fn_parts, rng)
+    kind = best_kind(part, target, rng, g) if (target is not None and rng.random() < 0.6) else str(rng.choice(PRIMITIVES))
     g = g.clone()
-    union_with(g, _placed(g, str(rng.choice(PRIMITIVES)), part))
+    union_with(g, _placed(g, kind, part))
     return g
 
 
@@ -392,8 +426,11 @@ class SearchConfig:
     final_fit: FitConfig = field(default_factory=lambda: FitConfig(steps=500))
     weights: dict = field(default_factory=lambda: dict(DEFAULT_WEIGHTS))
     seed: int = 0
-    time_budget: float = 600.0  # seconds
+    time_budget: float = 600.0  # seconds (wall clock; depends on machine load)
+    max_evals: int = 0  # if > 0, budget in candidate fits instead (reproducible across machines/load)
     adaptive: bool = True  # bandit re-weighting of mutations by observed improvement rate
+    simplify: bool = True  # final deterministic simplification sweep
+    simplify_fit: FitConfig = field(default_factory=lambda: FitConfig(steps=120, nv=2048, ns=512))
     library: list = field(default_factory=list)  # mined Macros (abstraction.mine)
     macro_init: bool = True  # also seed the search with each macro fitted to the whole target
 
@@ -501,6 +538,7 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
     torch.manual_seed(cfg.seed)
     t0 = time.time()
     muts = dict(MUTATIONS)
+    muts["add"] = lambda g, res, rng: m_add(g, res, rng, target)
     if cfg.library:
         muts["macro"] = lambda g, res, rng: m_macro(g, res, rng, cfg.library)
     stats = {k: [0, 0, 0, 0] for k in muts}
@@ -553,7 +591,7 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
                 if c.score < parent.score:
                     stats[name][2] += 1
                 children.append(c)
-            if time.time() - t0 > cfg.time_budget:
+            if _out_of_budget(cfg, t0, evaluated):
                 break
         beam = _select(beam + children, cfg.beam)
         for c in beam:
@@ -566,12 +604,80 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
         history.append(_hist(best, gen))
         log(f"gen {gen}  best score {best.score:.4f} iou {best.iou:.3f} via {best.origin}  {signature(best.graph)}"
             f"  [{time.time() - t0:.0f}s]")
-        if stall >= cfg.patience or time.time() - t0 > cfg.time_budget:
+        if stall >= cfg.patience or _out_of_budget(cfg, t0, evaluated):
             break
+    if cfg.simplify:
+        best, n_eval = simplify(best, target, cfg, log)
+        evaluated += n_eval
+        history.append(_hist(best, len(history)))
     final = _evaluate(best.graph, target, cfg.final_fit, cfg.beta, best.origin, best.gen)
     if final.score > best.score:
         final = best
     return SearchResult(final, history, stats, evaluated, time.time() - t0)
+
+
+def simplification_moves(g: Graph) -> list[tuple[str, Graph]]:
+    """Every single-step structural reduction of g: drop a union/intersect child, bypass a subtract or
+    deformer, instancify each same-kind group, swap each primitive kind."""
+    out = []
+    for nid in g.reachable():
+        n = g.nodes[nid]
+        if n.op in ("union", "intersect") and len(n.inputs) >= 2:
+            for i in range(len(n.inputs)):
+                h = g.clone()
+                hn = h.nodes[nid]
+                hn.inputs.pop(i)
+                if len(hn.inputs) == 1:
+                    h.replace_refs(nid, hn.inputs[0])
+                out.append(("drop", h.prune_unreachable()))
+        if n.op == "subtract" or n.spec.category == "deform":
+            h = g.clone()
+            h.replace_refs(nid, n.inputs[0])
+            out.append(("bypass", h.prune_unreachable()))
+    rng = np.random.default_rng(0)
+    root = g.nodes[g.output]
+    if root.op == "union":
+        kinds = set()
+        for c in root.inputs:
+            n = g.nodes[c]
+            if n.op in ("transform", "instance") and g.nodes[n.inputs[0]].spec.category == "prim":
+                kinds.add(g.nodes[n.inputs[0]].op)
+        for kind in sorted(kinds):
+            for _ in range(3):  # instancify picks a group at random; a few draws cover the groups
+                h = m_instancify(g, None, rng)
+                if h is not None:
+                    out.append(("instancify", h))
+                    break
+    return out
+
+
+def simplify(best: Candidate, target: Target, cfg: SearchConfig, log: Callable, max_rounds: int = 4):
+    """Greedy MDL descent: apply the best-scoring reduction until none improves the score."""
+    n_eval = 0
+    for _ in range(max_rounds):
+        moves = simplification_moves(best.graph)
+        seen, cands = {signature(best.graph)}, []
+        for name, h in moves:
+            sig = signature(h)
+            if sig in seen:
+                continue
+            seen.add(sig)
+            cands.append(_evaluate(h, target, cfg.simplify_fit, cfg.beta, f"simplify:{name}", best.gen))
+            n_eval += 1
+        if not cands:
+            break
+        top = min(cands, key=lambda c: c.score)
+        if top.score >= best.score - 1e-4:
+            break
+        log(f"simplify: {top.origin} score {best.score:.4f} -> {top.score:.4f}  {signature(top.graph)}")
+        best = top
+    return best, n_eval
+
+
+def _out_of_budget(cfg: SearchConfig, t0: float, evaluated: int) -> bool:
+    if cfg.max_evals > 0:
+        return evaluated >= cfg.max_evals
+    return time.time() - t0 > cfg.time_budget
 
 
 def _select(cands: list[Candidate], k: int) -> list[Candidate]:

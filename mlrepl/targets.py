@@ -139,27 +139,41 @@ def from_depth(depth: np.ndarray, K: np.ndarray, cam_to_world: np.ndarray, n_fre
     return Target(f(pts), f(occ), f(surf), f(lo), f(hi), weight=f(w))
 
 
-def from_gaussians(means: np.ndarray, opacities: np.ndarray, scales: np.ndarray, n_vol=20000, seed=0,
-                   min_opacity=0.5, res=64) -> Target:
-    """Gaussian splats: confident splat centers act as surface samples. Splats sit on surfaces, so a
-    thresholded density gives a *shell*; we voxelize it and fill enclosed cavities to get solid
-    occupancy (flood fill from outside). Open shells stay shells, which is the honest answer."""
-    from scipy import ndimage
+def gaussian_normals(rotations: np.ndarray, scales: np.ndarray) -> np.ndarray:
+    """Unoriented splat normals: the axis of the smallest scale. rotations are (N,4) wxyz quaternions."""
+    w, x, y, z = (rotations / np.linalg.norm(rotations, axis=1, keepdims=True)).T
+    R = np.stack([
+        np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], -1),
+        np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], -1),
+        np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], -1)], 1)
+    j = np.argmin(scales, axis=1)
+    return R[np.arange(len(R)), :, j]
 
-    rng = np.random.default_rng(seed)
+
+def from_gaussians(means: np.ndarray, opacities: np.ndarray, scales: np.ndarray, normals: np.ndarray = None,
+                   n_vol=20000, n_eval=20000, seed=0, min_opacity=0.5, k=8, res=96) -> Target:
+    """Gaussian splats -> solid target via a point-set-surface signed distance: for a query point, the
+    Gaussian-weighted average of n_i . (p - mu_i) over the k nearest confident splats.
+
+    `normals` must be oriented (outward); with 3DGS, take the smallest-scale axis (`gaussian_normals`)
+    and orient it toward the camera that sees the splat. Splat centers lie on the surface, so
+    unoriented density thresholding only gives a leaky shell; that is why orientation is required."""
+    from scipy.spatial import cKDTree
+
+    if normals is None:
+        raise ValueError("from_gaussians needs oriented normals (see gaussian_normals + camera orientation)")
     keep = opacities > min_opacity
-    mu = means[keep]
-    sc = np.maximum(scales[keep].reshape(len(mu), -1).mean(-1), 1e-3)
+    mu, nrm = means[keep], normals[keep]
+    nrm = nrm / np.linalg.norm(nrm, axis=1, keepdims=True)
+    sc = np.maximum(np.asarray(scales)[keep].reshape(len(mu), -1).max(-1), 1e-3)
+    tree = cKDTree(mu)
+    h = 2.0 * float(np.median(sc))
+
+    def fn(p):
+        dist, idx = tree.query(p, k=k)
+        w = np.exp(-0.5 * (dist / h) ** 2) + 1e-12
+        sd = ((p[:, None, :] - mu[idx]) * nrm[idx]).sum(-1)
+        return (w * sd).sum(1) / w.sum(1)
+
     lo, hi = mu.min(0) - 0.1, mu.max(0) + 0.1
-    grid = _grid(lo, hi, res).reshape(-1, 3)
-    dens = np.zeros(len(grid))
-    for s in range(0, len(grid), 2048):
-        d2 = ((grid[s:s + 2048, None] - mu[None]) ** 2).sum(-1)
-        dens[s:s + 2048] = np.exp(-0.5 * d2 / sc[None] ** 2).sum(-1)
-    solid = ndimage.binary_fill_holes(dens.reshape(res, res, res) > 0.5)
-
-    def occ_fn(p):
-        idx = np.clip(np.round((p - lo) / (hi - lo) * (res - 1)).astype(int), 0, res - 1)
-        return solid[idx[:, 0], idx[:, 1], idx[:, 2]].astype(np.float32)
-
-    return _assemble(occ_fn, mu, lo, hi, n_vol, n_vol, float(np.median(sc)), rng)
+    return from_sdf(fn, lo, hi, res=res, n_vol=n_vol, n_surf=min(len(mu), 6000), n_eval=n_eval, seed=seed)

@@ -166,8 +166,8 @@ class Graph:
             c += NODE_COST
             if n.spec.category == "inst":
                 c += INSTANCE_PARAM_COST * sum(r.numel() for k, r in n.raw.items() if k != "logit")
-            else:
-                c += PARAM_COST * n.nparams()
+            else:  # appearance params are not structure
+                c += PARAM_COST * sum(r.numel() for k, r in n.raw.items() if k != "color")
         return c
 
     def counts(self) -> dict:
@@ -188,6 +188,16 @@ class Graph:
                 vals_cache[nid] = node.values()
             children = [fn(c) for c in node.inputs]
             spec = node.spec
+            if ctx.color and spec.category == "prim":
+                v = vals_cache[nid]
+                col = v["color"] if "color" in v else torch.tensor(
+                    node.attrs.get("material", {}).get("base_color", (0.7, 0.7, 0.7)), dtype=torch.float32)
+
+                def f(q):
+                    d = spec.sdf(v, children, q, ctx)
+                    return torch.cat([d[..., None], col.expand(*d.shape, 3)], -1)
+
+                return f
 
             def f(q):
                 return spec.sdf(vals_cache[nid], children, q, ctx)
