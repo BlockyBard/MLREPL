@@ -1,0 +1,20 @@
+[project]
+name = "mlrepl"
+version = "0.1.0"
+description = "Differentiable graph synthesis for procedural 3D: inverse procedural modeling with realizable CSG, instancing and deformation"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.2", "numpy", "scipy", "scikit-image", "manifold3d>=3.0", "trimesh", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["mlrepl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
