@@ -329,5 +329,59 @@ register(
 )
 
 
+# ---------------------------------------------------------------------------
+# Regularity ops ("pattern" category): exact repetition with O(1) parameters.
+# Each is min over a small, closed-form set of rigid copies of the child, so the SDF is
+# exact and the mesh realization is a union of transformed copies (see pattern_transforms).
+#   mirror  attrs {axis}  params {c}: child and its reflection across the plane x_axis = c
+#   array   attrs {n}     params {d}: n copies at (i - (n-1)/2) * d, i = 0..n-1 (centered)
+#   radial  attrs {n}     params {} : n copies rotated about +Y by 2*pi*i/n
+# ---------------------------------------------------------------------------
+
+
+def pattern_offsets(op: str, attrs: dict, v: dict, device=None, dtype=torch.float32):
+    """(R, t) per copy, copy_i(x) = R_i x + t_i, as tensors (n,3,3), (n,3). Differentiable in v."""
+    if op == "mirror":
+        ax = int(attrs.get("axis", 0))
+        c = v["c"].reshape(())
+        R = torch.eye(3, device=device, dtype=dtype).repeat(2, 1, 1)
+        R[1, ax, ax] = -1.0
+        t = torch.zeros(2, 3, device=device, dtype=dtype)
+        t = t + torch.nn.functional.one_hot(torch.tensor(ax), 3).to(device=device, dtype=dtype)[None] * \
+            torch.stack([torch.zeros_like(c), 2 * c])[:, None]
+        return R, t
+    n = max(int(attrs.get("n", 2)), 1)
+    if op == "array":
+        i = torch.arange(n, device=device, dtype=dtype) - (n - 1) / 2.0
+        R = torch.eye(3, device=device, dtype=dtype).repeat(n, 1, 1)
+        return R, i[:, None] * v["d"][None]
+    if op == "radial":
+        th = 2 * math.pi * torch.arange(n, device=device, dtype=dtype) / n
+        w = torch.stack([torch.zeros_like(th), th, torch.zeros_like(th)], -1)
+        return axis_angle_to_matrix(w), torch.zeros(n, 3, device=device, dtype=dtype)
+    raise ValueError(op)
+
+
+def _make_pattern(op):
+    def fn(v, ch, p, ctx):
+        R, t = pattern_offsets(op, v.get("_attrs", {}), v, p.device, p.dtype)
+        n = R.shape[0]
+        view = (n,) + (1,) * (p.dim() - 1)
+        q = torch.einsum("kij,k...i->k...j", R, p.unsqueeze(0) - t.view(*view, 3))  # R^T (p - t)
+        return fcombine(ch[0](q), ctx.tau, ctx, "min")
+
+    return fn
+
+
+register(OpSpec("mirror", "pattern", 1, {"c": ParamSpec((1,), "real", 0.0)}, _make_pattern("mirror"),
+                "child plus its reflection across the plane x[axis] = c", attrs={"axis": 0}))
+register(OpSpec("array", "pattern", 1, {"d": ParamSpec((3,), "real", 0.3)}, _make_pattern("array"),
+                "n evenly spaced copies along d (centered)", attrs={"n": 2}))
+register(OpSpec("radial", "pattern", 1, {}, _make_pattern("radial"),
+                "n copies rotated evenly about +Y", attrs={"n": 6}))
+
+PATTERNS = ("mirror", "array", "radial")
+
+
 def param_count(op: str, values: dict) -> int:
     return int(sum(v.numel() for v in values.values()))

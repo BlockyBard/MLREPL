@@ -49,6 +49,8 @@ def _subtree(g: Graph, root: str) -> Graph:
 def _skeleton(g: Graph, nid: str) -> str:
     n = g.nodes[nid]
     tag = n.op + ("+dk" if "dk" in n.raw else "")
+    if n.spec.category == "pattern":
+        tag += f"[{n.attrs.get('axis', n.attrs.get('n'))}]"
     if not n.inputs:
         return tag
     kids = [_skeleton(g, c) for c in n.inputs]

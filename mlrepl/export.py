@@ -42,6 +42,65 @@ def _add_baked(scene, g, nid, name, opts, transform=None):
                            transform=transform)
 
 
+def expand_instances(g: Graph, nid: str):
+    """Flatten chains of transform / pattern (mirror, array, radial) / plain instance nodes into
+    [(proto_id, 4x4 world-from-proto)], or None if the subtree is not pure instancing
+    (booleans, deformers, per-instance deformation stop the expansion)."""
+    import torch
+
+    from .ops import pattern_offsets
+
+    n = g.nodes[nid]
+    cat = n.spec.category
+    if cat not in ("xform", "pattern", "inst"):
+        return [(nid, np.eye(4))]
+    if cat == "inst" and "dk" in n.raw:
+        return None
+    sub = expand_instances(g, n.inputs[0])
+    if sub is None:
+        return None
+    v = {k: _np(x) for k, x in n.values().items()}
+    if cat == "xform":
+        A = np.eye(4)
+        A[:3] = _affine(v["t"], v["r"], v["s"][0])
+        mats = [A]
+    elif cat == "pattern":
+        R, t = pattern_offsets(n.op, n.attrs, {k: torch.as_tensor(x) for k, x in v.items()}, dtype=torch.float64)
+        mats = []
+        for i in range(R.shape[0]):
+            A = np.eye(4)
+            A[:3, :3], A[:3, 3] = R[i].numpy(), t[i].numpy()
+            mats.append(A)
+    else:
+        mats = []
+        for i in range(n.k):
+            if v["logit"][i] >= 0:
+                A = np.eye(4)
+                A[:3] = _affine(v["t"][i], v["r"][i], v["s"][i][0])
+                mats.append(A)
+    return [(p, A @ B) for A in mats for p, B in sub]
+
+
+def _add_instanced(scene, g, pid, expansion, opts):
+    """One shared mesh per prototype, referenced by one scene node per copy."""
+    for proto_id in dict.fromkeys(p for p, _ in expansion):
+        mats = MaterialTable()
+        V, runs = manifold_material_runs(realize(g, proto_id, opts, mats), mats)
+        geoms = []
+        for src, mat, F in runs:
+            used = np.unique(F)
+            remap = -np.ones(len(V), dtype=np.int64)
+            remap[used] = np.arange(len(used))
+            geoms.append((f"{pid}/proto/{proto_id}/{src}", _tm(V[used], remap[F], mat)))
+        for i, (p, A) in enumerate(x for x in expansion if x[0] == proto_id):
+            for gname, geom in geoms:
+                node_name = f"{pid}/{proto_id}/i{i}/{gname.rsplit('/', 1)[-1]}"
+                if gname not in scene.geometry:
+                    scene.add_geometry(geom, geom_name=gname, node_name=node_name, transform=A)
+                else:
+                    scene.graph.update(frame_to=node_name, frame_from=scene.graph.base_frame, matrix=A, geometry=gname)
+
+
 def to_scene(g: Graph, opts: RealizeOpts = None, bake_deformed_instances: bool = True) -> trimesh.Scene:
     opts = opts or RealizeOpts()
     scene = trimesh.Scene()
@@ -49,6 +108,10 @@ def to_scene(g: Graph, opts: RealizeOpts = None, bake_deformed_instances: bool =
     parts = root.inputs if root.op == "union" else [g.output]
     for pid in parts:
         n = g.nodes[pid]
+        exp = expand_instances(g, pid)
+        if exp is not None and len(exp) > 1:  # pure instancing (incl. mirror/array/radial): share meshes
+            _add_instanced(scene, g, pid, exp, opts)
+            continue
         if n.spec.category != "inst":
             _add_baked(scene, g, pid, pid, opts)
             continue

@@ -130,6 +130,8 @@ def param_group(node, name: str) -> str:
         return "color"
     if name in ("t", "r", "s"):
         return name if node.spec.category in ("xform", "inst") else "size"
+    if name in ("c", "d"):  # pattern offsets/spacings move geometry like translations
+        return "t"
     if name in ("k", "dk"):
         return "deform"
     return "size"
@@ -164,7 +166,7 @@ def clamp_params(g: Graph, pos_bound: float):
             kind = n.spec.params[name].kind
             if kind in ("pos", "unit"):
                 r.clamp_(-12.0, 12.0)
-            elif name == "t":
+            elif name in ("t", "c", "d"):
                 r.clamp_(-pos_bound, pos_bound)
             elif name == "r":
                 nrm = r.norm(dim=-1, keepdim=True)

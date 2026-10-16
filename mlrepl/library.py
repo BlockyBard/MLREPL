@@ -205,3 +205,54 @@ HARD = {
     "colonnade": colonnade,
 }
 ALL.update(HARD)
+
+
+# ---------------------------------------------------------------------------
+# Irregular controls: statistically similar parts with no exact pattern (rubble, a cairn).
+# Used to check that regularity detectors don't impose structure that isn't there.
+# ---------------------------------------------------------------------------
+
+
+def rubble(seed: int = 3, n: int = 9) -> Graph:
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    g = Graph()
+    parts = []
+    for i in range(n):
+        kind = ["box", "sphere", "capsule"][i % 3]
+        s = rng.uniform(0.12, 0.28)
+        x, z = rng.uniform(-0.65, 0.65, 2)
+        pos = (float(x), float(-0.8 + s * 0.8 + rng.uniform(0, 0.25)), float(z))
+        rot = rng.normal(0, 0.8, 3).tolist()
+        if kind == "box":
+            parts.append(g.placed("box", pos=pos, rot=rot, b=(rng.uniform(0.6, 1.2, 3) * s).tolist(), round=[0.02],
+                                  attrs={"material": STONE}))
+        elif kind == "sphere":
+            parts.append(g.placed("sphere", pos=pos, r=[s], attrs={"material": STONE}))
+        else:
+            parts.append(g.placed("capsule", pos=pos, rot=rot, r=[0.6 * s], h=[0.8 * s], attrs={"material": STONE}))
+    g.output = g.add("union", parts)
+    return g
+
+
+def cairn(seed: int = 7) -> Graph:
+    """Stacked, jittered, unequal stones: nearly a column, but no exact repetition."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    g = Graph()
+    parts, y = [], -0.85
+    for i in range(6):
+        r = 0.42 - 0.05 * i + rng.uniform(-0.04, 0.04)
+        h = rng.uniform(0.07, 0.12)
+        y += h
+        parts.append(g.placed("cylinder", pos=(float(rng.normal(0, 0.06)), y, float(rng.normal(0, 0.06))),
+                              rot=rng.normal(0, 0.12, 3).tolist(), r=[r], h=[h], attrs={"material": STONE}))
+        y += h
+    g.output = g.add("union", parts)
+    return g
+
+
+ORGANIC = {"rubble": rubble, "cairn": cairn}
+ALL.update(ORGANIC)

@@ -14,6 +14,7 @@ from manifold3d import CrossSection, Manifold, Mesh, OpType
 
 from .graph import Graph
 from .mathutil import DEFORM_KINDS, apply_deform_chain_forward_np, axis_angle_to_matrix_np
+from .ops import pattern_offsets
 
 DEFAULT_PALETTE = [
     (0.80, 0.42, 0.25), (0.30, 0.55, 0.80), (0.45, 0.70, 0.35), (0.85, 0.75, 0.30),
@@ -114,6 +115,12 @@ def realize(g: Graph, root=None, opts: RealizeOpts = None, mats: MaterialTable =
             m = Manifold.batch_boolean([rec(c) for c in n.inputs], OpType.Intersect)
         elif n.op == "subtract":
             m = rec(n.inputs[0]) - rec(n.inputs[1])
+        elif cat == "pattern":
+            child = rec(n.inputs[0])
+            R, t = pattern_offsets(n.op, n.attrs, {k: torch.as_tensor(x) for k, x in v.items()}, dtype=torch.float64)
+            parts = [child.transform(np.concatenate([R[i].numpy(), t[i].numpy().reshape(3, 1)], 1))
+                     for i in range(R.shape[0])]
+            m = Manifold.batch_boolean(parts, OpType.Add)
         elif cat == "inst":
             proto = rec(n.inputs[0])
             parts = []

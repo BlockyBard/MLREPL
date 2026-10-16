@@ -210,6 +210,12 @@ class Graph:
             for pname in n.raw:
                 if pname not in spec.params:
                     errs.append(f"{nid}: unknown param {pname!r} for {n.op}")
+            if n.op in ("array", "radial"):
+                k = n.attrs.get("n")
+                if not isinstance(k, int) or k < (2 if n.op == "radial" else 1):
+                    errs.append(f"{nid}: {n.op} needs integer n >= {2 if n.op == 'radial' else 1}, got {k!r}")
+            if n.op == "mirror" and n.attrs.get("axis") not in (0, 1, 2):
+                errs.append(f"{nid}: mirror axis must be 0, 1 or 2, got {n.attrs.get('axis')!r}")
         if errs:
             raise GraphError("; ".join(errs))
         return self
@@ -259,6 +265,8 @@ class Graph:
                 c += INSTANCE_PARAM_COST * sum(r.numel() for k, r in n.raw.items() if k != "logit")
             else:  # appearance params are not structure
                 c += PARAM_COST * sum(r.numel() for k, r in n.raw.items() if k != "color")
+            if n.spec.category == "pattern":  # the integer attr (copy count / axis) is one symbol
+                c += PARAM_COST
         return c
 
     def counts(self) -> dict:
@@ -277,6 +285,8 @@ class Graph:
             node = self.nodes[nid]
             if nid not in vals_cache:
                 vals_cache[nid] = node.values()
+                if node.spec.category == "pattern":
+                    vals_cache[nid]["_attrs"] = node.attrs
             children = [fn(c) for c in node.inputs]
             spec = node.spec
             if ctx.color and spec.category == "prim":
@@ -329,6 +339,11 @@ class Graph:
         lines = []
 
         def fmt_vals(n):
+            if n.spec.category == "pattern":
+                extra = " ".join(f"{k}={v}" for k, v in n.attrs.items() if k in ("n", "axis"))
+                vals = " ".join(f"{k}=" + ",".join(f"{x:.3g}" for x in v.detach().flatten().tolist())
+                                for k, v in n.values().items())
+                return (extra + " " + vals).strip()
             if n.spec.category == "inst":
                 alive = int((n.value("logit") >= 0).sum())
                 return f"K={n.k} alive={alive}" + (" +deform" if "dk" in n.raw else "")

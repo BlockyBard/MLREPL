@@ -171,6 +171,8 @@ def signature(g: Graph) -> str:
     def rec(nid):
         n = g.nodes[nid]
         tag = n.op + ("+dk" if "dk" in n.raw else "")
+        if n.spec.category == "pattern":
+            tag += f"[{n.attrs.get('axis', n.attrs.get('n'))}]"
         if not n.inputs:
             return tag
         kids = [rec(c) for c in n.inputs]
@@ -426,7 +428,9 @@ MUTATIONS: dict[str, Callable] = {
 }
 
 DEFAULT_WEIGHTS = {"add": 3.0, "subtract": 1.5, "remove": 1.0, "swap": 1.0, "deform": 1.0, "to_instance": 0.7,
-                   "instancify": 1.0, "instance_deform": 0.5, "macro": 2.0}
+                   "instancify": 1.0, "instance_deform": 0.5, "macro": 2.0,
+                   # regularity detectors (regularity.py)
+                   "pattern": 2.0, "mirror": 1.0, "symmetrize": 0.7, "plane": 1.5, "count": 0.5}
 
 
 # ---------------------------------------------------------------------------
@@ -449,6 +453,7 @@ class SearchConfig:
     max_evals: int = 0  # if > 0, budget in candidate fits instead (reproducible across machines/load)
     adaptive: bool = True  # bandit re-weighting of mutations by observed improvement rate
     simplify: bool = True  # final deterministic simplification sweep
+    regularity: bool = True  # detector moves: pattern (array/grid/radial), mirror, symmetrize, plane, count
     w_surf_score: float = 0.5  # surface-recall weight in the score (0 = pure volume IoU, the v0 behaviour)
     simplify_fit: FitConfig = field(default_factory=lambda: FitConfig(steps=120, nv=2048, ns=512))
     library: list = field(default_factory=list)  # mined Macros (abstraction.mine)
@@ -500,6 +505,9 @@ def canonicalize(g: Graph) -> Graph:
                 tid = g.add("transform", [n.inputs[0]], params={"t": v["t"][0].tolist(), "r": v["r"][0].tolist(),
                                                                "s": v["s"][0].tolist()})
                 g.replace_refs(nid, tid)
+                changed = True
+            elif n.op == "array" and int(n.attrs.get("n", 2)) == 1:
+                g.replace_refs(nid, n.inputs[0])
                 changed = True
             elif n.op == "union":
                 flat = []
@@ -640,6 +648,14 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
     muts = dict(MUTATIONS)
     muts["add"] = lambda g, res, rng: m_add(g, res, rng, target)
     muts["deform"] = lambda g, res, rng: m_deform(g, res, rng, target)
+    if cfg.regularity:
+        from . import regularity as REG
+
+        muts["pattern"] = REG.m_pattern
+        muts["mirror"] = REG.m_mirror
+        muts["symmetrize"] = REG.make_m_symmetrize(target)
+        muts["plane"] = REG.make_m_plane(target)
+        muts["count"] = REG.m_count
     if cfg.library:
         muts["macro"] = lambda g, res, rng: m_macro(g, res, rng, cfg.library)
     names = list(muts)
@@ -772,7 +788,7 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
     return SearchResult(final, history, stats, evaluated, time.time() - t0)
 
 
-def simplification_moves(g: Graph) -> list[tuple[str, Graph]]:
+def simplification_moves(g: Graph, regularity: bool = True) -> list[tuple[str, Graph]]:
     """Every single-step structural reduction of g: drop a union/intersect child, bypass a subtract or
     deformer, instancify each same-kind group, swap each primitive kind."""
     out = []
@@ -804,6 +820,10 @@ def simplification_moves(g: Graph) -> list[tuple[str, Graph]]:
                 if h is not None:
                     out.append(("instancify", h))
                     break
+    if regularity:
+        from .regularity import deterministic_rewrites
+
+        out += deterministic_rewrites(g)
     return out
 
 
@@ -811,7 +831,7 @@ def simplify(best: Candidate, target: Target, cfg: SearchConfig, log: Callable, 
     """Greedy MDL descent: apply the best-scoring reduction until none improves the score."""
     n_eval = 0
     for _ in range(max_rounds):
-        moves = simplification_moves(best.graph)
+        moves = simplification_moves(best.graph, cfg.regularity)
         seen, cands = {signature(best.graph)}, []
         for name, h in moves:
             sig = signature(h)
