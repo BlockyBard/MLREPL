@@ -53,6 +53,7 @@ class FitConfig:
     freeze_gauge: bool = True
     seed: int = 0
     beta: float = 1e-3  # complexity weight in score
+    w_surf_score: float = 0.5  # weight of surface recall vs volume IoU in the score
 
 
 @dataclass
@@ -74,9 +75,22 @@ def iou(g: Graph, target: Target, ctx: Optional[EvalCtx] = None) -> float:
     return inter / max(union, 1)
 
 
-def score(g: Graph, target: Target, beta: float, iou_val: Optional[float] = None) -> float:
+def surface_recall(g: Graph, target: Target, tol: Optional[float] = None) -> float:
+    """Fraction of target surface samples lying on the predicted surface (|f| < tol). Unlike IoU this
+    weighs a part by its surface area, so thin parts (slats, rails, teeth) matter."""
+    tol = tol if tol is not None else 0.006 * target.diag
+    with torch.no_grad():
+        d = g.sdf(target.surface, EvalCtx(tau=0.0, hard_gates=True))
+    return float((d.abs() < tol).float().mean())
+
+
+def score(g: Graph, target: Target, beta: float, iou_val: Optional[float] = None, w_surf: float = 0.5) -> float:
+    """(1 - w) * (1 - IoU) + w * (1 - surface recall) + beta * complexity, all with exact CSG semantics."""
     iou_val = iou(g, target) if iou_val is None else iou_val
-    return (1.0 - iou_val) + beta * g.complexity()
+    data = 1.0 - iou_val
+    if w_surf > 0:
+        data = (1 - w_surf) * data + w_surf * (1.0 - surface_recall(g, target))
+    return data + beta * g.complexity()
 
 
 def _instance_nodes(g):
@@ -287,4 +301,4 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
         prune_instances(g, target, cfg.prune_gain)
     g.requires_grad_(False)
     v = iou(g, target)
-    return FitResult(g, v, hist[-1] if hist else float("nan"), score(g, target, cfg.beta, v), hist)
+    return FitResult(g, v, hist[-1] if hist else float("nan"), score(g, target, cfg.beta, v, cfg.w_surf_score), hist)

@@ -1,6 +1,6 @@
 """Structure search over graphs: data-guided mutations + inner continuous fit + MDL-style score.
 
-score(G) = (1 - IoU_hard(G)) + beta * complexity(G)
+score(G) = (1-w)(1 - IoU_hard(G)) + w (1 - surface_recall(G)) + beta * complexity(G)
 
 IoU is measured with exact CSG semantics (tau = 0, hard gates), so every score is the score
 of a realizable mesh. Mutations are proposed from residuals (missing volume -> add, spurious
@@ -304,7 +304,12 @@ def m_swap(g, res, rng):
     return g
 
 
-def m_deform(g, res, rng):
+DEFORM_SCAN = (-1.6, -0.9, -0.4, 0.4, 0.9, 1.6)
+
+
+def m_deform(g, res, rng, target=None):
+    """Wrap a placed primitive in a deformer. The strength is initialized by a cheap scan (no fitting):
+    gradients from k ~ 0 rarely reach a large twist/bend, since the loss is flat-ish near zero."""
     pp = _placed_prims(g)
     if not pp:
         return None
@@ -313,6 +318,18 @@ def m_deform(g, res, rng):
     kind = str(rng.choice(DEFORM_KINDS))
     d = g.add(kind, [pid], params={"k": [float(rng.normal() * 0.2)]})
     g.nodes[tid].inputs[0] = d
+    if target is not None:
+        P = target.eval_points[:15000]
+        gt = target.eval_occ[:15000] > 0.5
+        best = (-1.0, None)
+        for k in (float(g.nodes[d].value("k")),) + DEFORM_SCAN:
+            g.nodes[d].set_value("k", torch.tensor([k]))
+            with torch.no_grad():
+                pr = g.sdf(P, EvalCtx(hard_gates=True)) < 0
+            v = float((pr & gt).sum() / max(int((pr | gt).sum()), 1))
+            if v > best[0]:
+                best = (v, k)
+        g.nodes[d].set_value("k", torch.tensor([best[1]]))
     return g
 
 
@@ -430,6 +447,7 @@ class SearchConfig:
     max_evals: int = 0  # if > 0, budget in candidate fits instead (reproducible across machines/load)
     adaptive: bool = True  # bandit re-weighting of mutations by observed improvement rate
     simplify: bool = True  # final deterministic simplification sweep
+    w_surf_score: float = 0.5  # surface-recall weight in the score (0 = pure volume IoU, the v0 behaviour)
     simplify_fit: FitConfig = field(default_factory=lambda: FitConfig(steps=120, nv=2048, ns=512))
     library: list = field(default_factory=list)  # mined Macros (abstraction.mine)
     macro_init: bool = True  # also seed the search with each macro fitted to the whole target
@@ -511,11 +529,16 @@ def canonicalize(g: Graph) -> Graph:
     return g
 
 
-def _evaluate(g: Graph, target: Target, fcfg: FitConfig, beta: float, origin: str, gen: int) -> Candidate:
-    fcfg = FitConfig(**{**fcfg.__dict__, "beta": beta})
+W_SURF = 0.5  # module default; SearchConfig.w_surf_score overrides per search
+
+
+def _evaluate(g: Graph, target: Target, fcfg: FitConfig, beta: float, origin: str, gen: int,
+              w_surf: Optional[float] = None) -> Candidate:
+    w = W_SURF if w_surf is None else w_surf
+    fcfg = FitConfig(**{**fcfg.__dict__, "beta": beta, "w_surf_score": w})
     r = fit(g, target, fcfg)
     cg = canonicalize(r.graph)
-    return Candidate(cg, score(cg, target, beta), r.iou, origin, gen)
+    return Candidate(cg, score(cg, target, beta, w_surf=w), r.iou, origin, gen)
 
 
 def initial_candidates(target: Target, n_local: int = 2, seed: int = 0) -> list[Graph]:
@@ -534,11 +557,14 @@ def initial_candidates(target: Target, n_local: int = 2, seed: int = 0) -> list[
 def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[list[Graph]] = None,
            log: Callable = print) -> SearchResult:
     cfg = cfg or SearchConfig()
+    global W_SURF
+    W_SURF = cfg.w_surf_score
     rng = np.random.default_rng(cfg.seed)
     torch.manual_seed(cfg.seed)
     t0 = time.time()
     muts = dict(MUTATIONS)
     muts["add"] = lambda g, res, rng: m_add(g, res, rng, target)
+    muts["deform"] = lambda g, res, rng: m_deform(g, res, rng, target)
     if cfg.library:
         muts["macro"] = lambda g, res, rng: m_macro(g, res, rng, cfg.library)
     stats = {k: [0, 0, 0, 0] for k in muts}
