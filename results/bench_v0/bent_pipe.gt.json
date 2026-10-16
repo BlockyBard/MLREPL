@@ -1,0 +1,65 @@
+{
+ "output": "tra2",
+ "nodes": [
+  {
+   "id": "cap0",
+   "op": "capsule",
+   "inputs": [],
+   "params": {
+    "r": [
+     0.1599999964237213
+    ],
+    "h": [
+     0.699999988079071
+    ]
+   },
+   "attrs": {
+    "material": {
+     "base_color": [
+      0.7,
+      0.72,
+      0.75
+     ],
+     "roughness": 0.3,
+     "metallic": 1.0
+    }
+   }
+  },
+  {
+   "id": "ben1",
+   "op": "bend",
+   "inputs": [
+    "cap0"
+   ],
+   "params": {
+    "k": [
+     1.2999999523162842
+    ]
+   },
+   "attrs": {}
+  },
+  {
+   "id": "tra2",
+   "op": "transform",
+   "inputs": [
+    "ben1"
+   ],
+   "params": {
+    "t": [
+     -0.25,
+     0.0,
+     0.0
+    ],
+    "r": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "s": [
+     1.0
+    ]
+   },
+   "attrs": {}
+  }
+ ]
+}

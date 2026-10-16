@@ -111,3 +111,45 @@ Both are on the roadmap.
    never in the inner loop.
 6. **GPU.** Batched evaluation of whole populations (`torch.vmap` over candidate parameter sets of a
    shared structure), CUDA kernels for SDF evaluation, larger dense-mesh targets (winding number on GPU).
+
+## Benchmark v0 (CPU, 2 cores, ~5 min per target, search from scratch)
+
+`results/bench_v0/`. Target = shape sampled from a hand-crafted graph; search sees only samples.
+IoU on 40k uniform points (SDF) / 6k points against the exported exact-CSG mesh.
+(Run predates the box-rounding fix and adaptive mutation weights.)
+
+| target | IoU sdf | IoU mesh | found | ground truth |
+|---|---|---|---|---|
+| table | 0.984 | 0.974 | `union(instance(box), transform(box)×2, transform(cylinder))` | `union(instance(cylinder), transform(box))` |
+| mug | 0.989 | 0.994 | `union(subtract(cyl, cyl), torus)` (**exact structure**) | same |
+| twisted column | 0.915 | 0.917 | `union(instance+dk(box), transform(cylinder))` | `union(box, box, twist(box))` |
+| fence | 0.918 | 0.874 | `union(instance(capsule), subtract(box, instance(cylinder)), box)` | `union(instance(box), instance(box))` |
+| bent pipe | 0.996 | 0.839* | `transform(bend(box))` (rounded box ≈ capsule) | `transform(bend(capsule))` |
+| bracket | 0.993 | 1.000 | `subtract(box, instance(capsule))` (structure match) | `subtract(box, instance(cylinder))` |
+| stool | 0.976 | 0.951 | `union(instance+dk(cylinder), subtract(bend(cylinder), box))` | `union(instance+dk(cylinder), cylinder)` |
+
+\* the SDF/mesh gap on bent pipe exposed a realizability bug (box rounding > half-extent allowed by the
+SDF, clamped by the mesh). Fixed; regression test added; the found graph now agrees 100 %.
+
+Mutation effectiveness, summed over targets (fitted → improved its parent / entered the beam):
+
+| mutation | fitted | improved | rate | entered beam |
+|---|---|---|---|---|
+| subtract | 147 | 63 | 43 % | 16 |
+| to_instance | 117 | 47 | 40 % | 16 |
+| add | 210 | 78 | 37 % | 41 |
+| instance_deform | 32 | 10 | 31 % | 4 |
+| remove | 139 | 26 | 19 % | 8 |
+| deform | 128 | 22 | 17 % | 18 |
+| swap | 136 | 16 | 12 % | 10 |
+| instancify | 9 | 4 | 44 % | 1 (rarely applicable) |
+
+Observations:
+- Residual-guided add/subtract and `to_instance` + densification do most of the work.
+- Missing structure is mostly a **search-budget / MDL-calibration** issue, not expressivity. The table's
+  legs were found as instanced boxes plus two stray boxes, and the twist on the column was approximated by
+  a cylinder: a twisted square shaft and a cylinder differ by only ~8 % IoU, and β makes the extra
+  deformer + box not worth it within budget.
+- Next: longer budgets / GPU population batching, a "simplify" phase that tries removals and
+  instancify at the end, β sweeps, and macro-seeded runs (mine on these, re-solve) to measure library
+  learning gains.

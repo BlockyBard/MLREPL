@@ -1,0 +1,891 @@
+{
+ "table": {
+  "iou_sdf": 0.9835,
+  "iou_mesh": 0.9742,
+  "score": 0.077,
+  "complexity_found": 60.5,
+  "complexity_gt": 40.5,
+  "structure_found": "union(instance(box),transform(box),transform(box),transform(cylinder))",
+  "structure_gt": "union(instance(cylinder),transform(box))",
+  "evaluated": 93,
+  "seconds": 352.8,
+  "mutation_stats": {
+   "add": [
+    29,
+    29,
+    15,
+    10
+   ],
+   "subtract": [
+    17,
+    7,
+    3,
+    0
+   ],
+   "remove": [
+    14,
+    10,
+    0,
+    0
+   ],
+   "swap": [
+    9,
+    9,
+    1,
+    0
+   ],
+   "deform": [
+    9,
+    9,
+    0,
+    0
+   ],
+   "to_instance": [
+    10,
+    10,
+    1,
+    1
+   ],
+   "instancify": [
+    7,
+    4,
+    0,
+    0
+   ],
+   "instance_deform": [
+    6,
+    0,
+    0,
+    0
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.19411309030654517,
+    "iou": 0.8193869096934548,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 1,
+    "score": 0.1628382838283828,
+    "iou": 0.8671617161716172,
+    "complexity": 30.0,
+    "signature": "union(transform(box),transform(capsule))"
+   },
+   {
+    "gen": 2,
+    "score": 0.1628382838283828,
+    "iou": 0.8671617161716172,
+    "complexity": 30.0,
+    "signature": "union(transform(box),transform(capsule))"
+   },
+   {
+    "gen": 3,
+    "score": 0.14595901639344258,
+    "iou": 0.8975409836065574,
+    "complexity": 43.5,
+    "signature": "union(transform(box),transform(box),transform(capsule))"
+   },
+   {
+    "gen": 4,
+    "score": 0.1217540983606557,
+    "iou": 0.9352459016393443,
+    "complexity": 57.0,
+    "signature": "union(transform(box),transform(box),transform(box),transform(cylinder))"
+   },
+   {
+    "gen": 5,
+    "score": 0.07946125309150864,
+    "iou": 0.9810387469084914,
+    "complexity": 60.5,
+    "signature": "union(instance(box),transform(box),transform(box),transform(cylinder))"
+   }
+  ]
+ },
+ "mug": {
+  "iou_sdf": 0.9887,
+  "iou_mesh": 0.9935,
+  "score": 0.0568,
+  "complexity_found": 45.5,
+  "complexity_gt": 45.5,
+  "structure_found": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))",
+  "structure_gt": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))",
+  "evaluated": 170,
+  "seconds": 306.0,
+  "mutation_stats": {
+   "add": [
+    77,
+    34,
+    11,
+    3
+   ],
+   "subtract": [
+    39,
+    19,
+    14,
+    6
+   ],
+   "remove": [
+    27,
+    25,
+    5,
+    2
+   ],
+   "swap": [
+    28,
+    28,
+    4,
+    2
+   ],
+   "deform": [
+    24,
+    24,
+    4,
+    4
+   ],
+   "to_instance": [
+    23,
+    23,
+    6,
+    2
+   ],
+   "instancify": [
+    28,
+    0,
+    0,
+    0
+   ],
+   "instance_deform": [
+    12,
+    2,
+    0,
+    0
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.6153108108108107,
+    "iou": 0.39718918918918916,
+    "complexity": 12.5,
+    "signature": "transform(cylinder)"
+   },
+   {
+    "gen": 1,
+    "score": 0.41770520433112124,
+    "iou": 0.6122947956688788,
+    "complexity": 30.0,
+    "signature": "subtract(transform(box),transform(cylinder))"
+   },
+   {
+    "gen": 2,
+    "score": 0.38362485725161777,
+    "iou": 0.6638751427483822,
+    "complexity": 47.5,
+    "signature": "subtract(subtract(transform(box),transform(cylinder)),transform(box))"
+   },
+   {
+    "gen": 3,
+    "score": 0.35361950498707057,
+    "iou": 0.7103804950129294,
+    "complexity": 64.0,
+    "signature": "union(subtract(subtract(transform(box),transform(cylinder)),transform(box)),transform(torus))"
+   },
+   {
+    "gen": 4,
+    "score": 0.07427295041728027,
+    "iou": 0.9877270495827197,
+    "complexity": 62.0,
+    "signature": "union(subtract(subtract(transform(cylinder),transform(cylinder)),transform(cylinder)),transform(torus))"
+   },
+   {
+    "gen": 5,
+    "score": 0.07427295041728027,
+    "iou": 0.9877270495827197,
+    "complexity": 62.0,
+    "signature": "union(subtract(subtract(transform(cylinder),transform(cylinder)),transform(cylinder)),transform(torus))"
+   },
+   {
+    "gen": 6,
+    "score": 0.05680776794493604,
+    "iou": 0.988692232055064,
+    "complexity": 45.5,
+    "signature": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))"
+   },
+   {
+    "gen": 7,
+    "score": 0.05680776794493604,
+    "iou": 0.988692232055064,
+    "complexity": 45.5,
+    "signature": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))"
+   },
+   {
+    "gen": 8,
+    "score": 0.05680776794493604,
+    "iou": 0.988692232055064,
+    "complexity": 45.5,
+    "signature": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))"
+   },
+   {
+    "gen": 9,
+    "score": 0.05680776794493604,
+    "iou": 0.988692232055064,
+    "complexity": 45.5,
+    "signature": "union(subtract(transform(cylinder),transform(cylinder)),transform(torus))"
+   }
+  ]
+ },
+ "twisted_column": {
+  "iou_sdf": 0.9152,
+  "iou_mesh": 0.9167,
+  "score": 0.1252,
+  "complexity_found": 41.5,
+  "complexity_gt": 49.0,
+  "structure_found": "union(instance+dk(box),transform(cylinder))",
+  "structure_gt": "union(transform(box),transform(box),transform(twist(box)))",
+  "evaluated": 168,
+  "seconds": 396.4,
+  "mutation_stats": {
+   "add": [
+    54,
+    54,
+    5,
+    7
+   ],
+   "subtract": [
+    38,
+    37,
+    4,
+    1
+   ],
+   "remove": [
+    23,
+    21,
+    2,
+    3
+   ],
+   "swap": [
+    25,
+    12,
+    0,
+    1
+   ],
+   "deform": [
+    20,
+    7,
+    3,
+    2
+   ],
+   "to_instance": [
+    24,
+    14,
+    12,
+    1
+   ],
+   "instancify": [
+    19,
+    0,
+    0,
+    0
+   ],
+   "instance_deform": [
+    12,
+    8,
+    2,
+    1
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.44760176843510174,
+    "iou": 0.5648982315648983,
+    "complexity": 12.5,
+    "signature": "transform(cylinder)"
+   },
+   {
+    "gen": 1,
+    "score": 0.26230928546772525,
+    "iou": 0.7676907145322748,
+    "complexity": 30.0,
+    "signature": "union(transform(box),transform(cylinder))"
+   },
+   {
+    "gen": 2,
+    "score": 0.26230928546772525,
+    "iou": 0.7676907145322748,
+    "complexity": 30.0,
+    "signature": "union(transform(box),transform(cylinder))"
+   },
+   {
+    "gen": 3,
+    "score": 0.1313760330578512,
+    "iou": 0.9101239669421488,
+    "complexity": 41.5,
+    "signature": "union(instance(box),transform(bend(cylinder)))"
+   },
+   {
+    "gen": 4,
+    "score": 0.1313760330578512,
+    "iou": 0.9101239669421488,
+    "complexity": 41.5,
+    "signature": "union(instance(box),transform(bend(cylinder)))"
+   },
+   {
+    "gen": 5,
+    "score": 0.12842652638840982,
+    "iou": 0.9130734736115902,
+    "complexity": 41.5,
+    "signature": "union(instance(box),transform(bend(cylinder)))"
+   },
+   {
+    "gen": 6,
+    "score": 0.12555396056727777,
+    "iou": 0.9159460394327222,
+    "complexity": 41.5,
+    "signature": "union(instance+dk(box),transform(cylinder))"
+   },
+   {
+    "gen": 7,
+    "score": 0.12555396056727777,
+    "iou": 0.9159460394327222,
+    "complexity": 41.5,
+    "signature": "union(instance+dk(box),transform(cylinder))"
+   },
+   {
+    "gen": 8,
+    "score": 0.12555396056727777,
+    "iou": 0.9159460394327222,
+    "complexity": 41.5,
+    "signature": "union(instance+dk(box),transform(cylinder))"
+   },
+   {
+    "gen": 9,
+    "score": 0.12555396056727777,
+    "iou": 0.9159460394327222,
+    "complexity": 41.5,
+    "signature": "union(instance+dk(box),transform(cylinder))"
+   }
+  ]
+ },
+ "fence": {
+  "iou_sdf": 0.918,
+  "iou_mesh": 0.8738,
+  "score": 0.1665,
+  "complexity_found": 84.5,
+  "complexity_gt": 52.0,
+  "structure_found": "union(instance(capsule),subtract(transform(box),instance(cylinder)),transform(box))",
+  "structure_gt": "union(instance(box),instance(box))",
+  "evaluated": 163,
+  "seconds": 338.4,
+  "mutation_stats": {
+   "add": [
+    50,
+    40,
+    13,
+    10
+   ],
+   "subtract": [
+    32,
+    26,
+    7,
+    2
+   ],
+   "remove": [
+    17,
+    16,
+    3,
+    2
+   ],
+   "swap": [
+    25,
+    24,
+    7,
+    1
+   ],
+   "deform": [
+    21,
+    21,
+    7,
+    3
+   ],
+   "to_instance": [
+    18,
+    16,
+    5,
+    3
+   ],
+   "instancify": [
+    21,
+    1,
+    0,
+    0
+   ],
+   "instance_deform": [
+    10,
+    4,
+    2,
+    0
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.6942935076645625,
+    "iou": 0.31920649233543735,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 1,
+    "score": 0.6942935076645625,
+    "iou": 0.31920649233543735,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 2,
+    "score": 0.6552302025782689,
+    "iou": 0.3747697974217311,
+    "complexity": 30.0,
+    "signature": "subtract(transform(box),transform(cylinder))"
+   },
+   {
+    "gen": 3,
+    "score": 0.6410483870967741,
+    "iou": 0.4064516129032258,
+    "complexity": 47.5,
+    "signature": "union(subtract(transform(box),transform(cylinder)),transform(box))"
+   },
+   {
+    "gen": 4,
+    "score": 0.6410483870967741,
+    "iou": 0.4064516129032258,
+    "complexity": 47.5,
+    "signature": "union(subtract(transform(box),transform(cylinder)),transform(box))"
+   },
+   {
+    "gen": 5,
+    "score": 0.5031073985680191,
+    "iou": 0.5548926014319809,
+    "complexity": 58.0,
+    "signature": "union(subtract(transform(box),instance(cylinder)),transform(box))"
+   },
+   {
+    "gen": 6,
+    "score": 0.19039436619718314,
+    "iou": 0.8926056338028169,
+    "complexity": 83.0,
+    "signature": "union(subtract(transform(box),instance(cylinder)),transform(box),transform(twist(box)))"
+   },
+   {
+    "gen": 7,
+    "score": 0.1671309314586995,
+    "iou": 0.9103690685413005,
+    "complexity": 77.5,
+    "signature": "union(subtract(transform(box),instance(cylinder)),transform(box),transform(capsule))"
+   },
+   {
+    "gen": 8,
+    "score": 0.1671309314586995,
+    "iou": 0.9103690685413005,
+    "complexity": 77.5,
+    "signature": "union(subtract(transform(box),instance(cylinder)),transform(box),transform(capsule))"
+   },
+   {
+    "gen": 9,
+    "score": 0.16652443280977314,
+    "iou": 0.9179755671902269,
+    "complexity": 84.5,
+    "signature": "union(instance(capsule),subtract(transform(box),instance(cylinder)),transform(box))"
+   }
+  ]
+ },
+ "bent_pipe": {
+  "iou_sdf": 0.9955,
+  "iou_mesh": 0.8387,
+  "score": 0.0225,
+  "complexity_found": 18.0,
+  "complexity_gt": 17.0,
+  "structure_found": "transform(bend(box))",
+  "structure_gt": "transform(bend(capsule))",
+  "evaluated": 131,
+  "seconds": 199.2,
+  "mutation_stats": {
+   "add": [
+    90,
+    13,
+    13,
+    2
+   ],
+   "subtract": [
+    50,
+    11,
+    10,
+    1
+   ],
+   "remove": [
+    30,
+    27,
+    9,
+    1
+   ],
+   "swap": [
+    33,
+    21,
+    7,
+    5
+   ],
+   "deform": [
+    36,
+    22,
+    2,
+    1
+   ],
+   "to_instance": [
+    26,
+    18,
+    15,
+    4
+   ],
+   "instancify": [
+    29,
+    1,
+    1,
+    0
+   ],
+   "instance_deform": [
+    20,
+    3,
+    3,
+    0
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.47797602131438727,
+    "iou": 0.5355239786856127,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 1,
+    "score": 0.22621912350597614,
+    "iou": 0.8047808764940239,
+    "complexity": 31.0,
+    "signature": "union(transform(box),transform(box))"
+   },
+   {
+    "gen": 2,
+    "score": 0.05507831325301207,
+    "iou": 0.9804216867469879,
+    "complexity": 35.5,
+    "signature": "union(transform(bend(box)),transform(box))"
+   },
+   {
+    "gen": 3,
+    "score": 0.028542168674698817,
+    "iou": 0.9894578313253012,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   },
+   {
+    "gen": 4,
+    "score": 0.028542168674698817,
+    "iou": 0.9894578313253012,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   },
+   {
+    "gen": 5,
+    "score": 0.027036144578313256,
+    "iou": 0.9909638554216867,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   },
+   {
+    "gen": 6,
+    "score": 0.027036144578313256,
+    "iou": 0.9909638554216867,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   },
+   {
+    "gen": 7,
+    "score": 0.027036144578313256,
+    "iou": 0.9909638554216867,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   },
+   {
+    "gen": 8,
+    "score": 0.027036144578313256,
+    "iou": 0.9909638554216867,
+    "complexity": 18.0,
+    "signature": "transform(bend(box))"
+   }
+  ]
+ },
+ "bracket": {
+  "iou_sdf": 0.9927,
+  "iou_mesh": 1.0,
+  "score": 0.0443,
+  "complexity_found": 37.0,
+  "complexity_gt": 37.0,
+  "structure_found": "subtract(transform(box),instance(capsule))",
+  "structure_gt": "subtract(transform(box),instance(cylinder))",
+  "evaluated": 134,
+  "seconds": 270.6,
+  "mutation_stats": {
+   "add": [
+    78,
+    6,
+    6,
+    0
+   ],
+   "subtract": [
+    45,
+    19,
+    15,
+    4
+   ],
+   "remove": [
+    31,
+    26,
+    7,
+    0
+   ],
+   "swap": [
+    31,
+    19,
+    1,
+    1
+   ],
+   "deform": [
+    43,
+    24,
+    0,
+    4
+   ],
+   "to_instance": [
+    29,
+    13,
+    5,
+    3
+   ],
+   "instancify": [
+    30,
+    0,
+    0,
+    0
+   ],
+   "instance_deform": [
+    22,
+    12,
+    0,
+    1
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.09791116405718174,
+    "iou": 0.9155888359428183,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 1,
+    "score": 0.09728746594005448,
+    "iou": 0.9162125340599455,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 2,
+    "score": 0.08130007027406891,
+    "iou": 0.9486999297259311,
+    "complexity": 30.0,
+    "signature": "subtract(transform(box),transform(capsule))"
+   },
+   {
+    "gen": 3,
+    "score": 0.04725641025641022,
+    "iou": 0.9897435897435898,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   },
+   {
+    "gen": 4,
+    "score": 0.04725641025641022,
+    "iou": 0.9897435897435898,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   },
+   {
+    "gen": 5,
+    "score": 0.0443421439060205,
+    "iou": 0.9926578560939795,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   },
+   {
+    "gen": 6,
+    "score": 0.0443421439060205,
+    "iou": 0.9926578560939795,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   },
+   {
+    "gen": 7,
+    "score": 0.0443421439060205,
+    "iou": 0.9926578560939795,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   },
+   {
+    "gen": 8,
+    "score": 0.0443421439060205,
+    "iou": 0.9926578560939795,
+    "complexity": 37.0,
+    "signature": "subtract(transform(box),instance(capsule))"
+   }
+  ]
+ },
+ "stool": {
+  "iou_sdf": 0.9757,
+  "iou_mesh": 0.9506,
+  "score": 0.1021,
+  "complexity_found": 62.5,
+  "complexity_gt": 40.5,
+  "structure_found": "union(instance+dk(cylinder),subtract(transform(bend(cylinder)),transform(box)))",
+  "structure_gt": "union(instance+dk(cylinder),transform(cylinder))",
+  "evaluated": 164,
+  "seconds": 402.3,
+  "mutation_stats": {
+   "add": [
+    53,
+    34,
+    15,
+    9
+   ],
+   "subtract": [
+    30,
+    28,
+    10,
+    2
+   ],
+   "remove": [
+    17,
+    14,
+    0,
+    0
+   ],
+   "swap": [
+    23,
+    23,
+    2,
+    0
+   ],
+   "deform": [
+    21,
+    21,
+    6,
+    4
+   ],
+   "to_instance": [
+    23,
+    23,
+    3,
+    2
+   ],
+   "instancify": [
+    24,
+    3,
+    3,
+    1
+   ],
+   "instance_deform": [
+    6,
+    3,
+    3,
+    2
+   ]
+  },
+  "history": [
+   {
+    "gen": 0,
+    "score": 0.435375,
+    "iou": 0.578125,
+    "complexity": 13.5,
+    "signature": "transform(box)"
+   },
+   {
+    "gen": 1,
+    "score": 0.43438871473354235,
+    "iou": 0.5956112852664577,
+    "complexity": 30.0,
+    "signature": "subtract(transform(cylinder),transform(box))"
+   },
+   {
+    "gen": 2,
+    "score": 0.41808139534883726,
+    "iou": 0.6119186046511628,
+    "complexity": 30.0,
+    "signature": "union(transform(box),transform(torus))"
+   },
+   {
+    "gen": 3,
+    "score": 0.33057224958949094,
+    "iou": 0.715927750410509,
+    "complexity": 46.5,
+    "signature": "union(subtract(transform(cylinder),transform(box)),transform(cylinder))"
+   },
+   {
+    "gen": 4,
+    "score": 0.2536308724832215,
+    "iou": 0.8053691275167785,
+    "complexity": 59.0,
+    "signature": "union(subtract(transform(cylinder),transform(box)),transform(capsule),transform(cylinder))"
+   },
+   {
+    "gen": 5,
+    "score": 0.15917803660565727,
+    "iou": 0.9068219633943427,
+    "complexity": 66.0,
+    "signature": "union(instance(cylinder),subtract(transform(cylinder),transform(box)),transform(cylinder))"
+   },
+   {
+    "gen": 6,
+    "score": 0.1580336134453782,
+    "iou": 0.9159663865546218,
+    "complexity": 74.0,
+    "signature": "union(instance(cylinder),subtract(transform(taper(cylinder)),transform(box)),transform(cylinder))"
+   },
+   {
+    "gen": 7,
+    "score": 0.14327027027027028,
+    "iou": 0.9172297297297297,
+    "complexity": 60.5,
+    "signature": "union(instance(cylinder),subtract(transform(cylinder),transform(box)))"
+   },
+   {
+    "gen": 8,
+    "score": 0.10265517241379313,
+    "iou": 0.9722222222222222,
+    "complexity": 63.0,
+    "signature": "union(instance+dk(cylinder),subtract(transform(cylinder),transform(box)))"
+   },
+   {
+    "gen": 9,
+    "score": 0.10208691910499135,
+    "iou": 0.9756521739130435,
+    "complexity": 62.5,
+    "signature": "union(instance+dk(cylinder),subtract(transform(bend(cylinder)),transform(box)))"
+   }
+  ]
+ }
+}
