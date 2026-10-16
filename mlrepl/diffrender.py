@@ -306,7 +306,9 @@ class ImageFitConfig:
     tau0: float = 0.0  # structure is already hard; keep exact CSG semantics by default
     fit_color: bool = True
     fit_geometry: bool = True
-    guard: bool = True  # revert geometry (keep colors) if fitting made the training silhouettes worse
+    guard: bool = True  # early-stop geometry on held-out views (keeps the input geometry if fitting never helps)
+    holdout_views: int = 1  # views withheld from fitting and used only for the guard
+    val_every: int = 25
     seed: int = 0
     opts: RenderOpts = field(default_factory=RenderOpts)
 
@@ -340,6 +342,25 @@ def fit_images(g: Graph, target: ImageTarget, cfg: Optional[ImageFitConfig] = No
     opt = torch.optim.Adam(groups)
     gen = torch.Generator().manual_seed(cfg.seed)
     hist = []
+    full = target
+    use_val = cfg.fit_geometry and cfg.guard and cfg.holdout_views > 0 and len(target.views) > 3
+    if use_val:  # validation views never contribute gradients; they choose which geometry to keep
+        target = ImageTarget(full.views[:-cfg.holdout_views], full.background)
+        val = ImageTarget(full.views[-cfg.holdout_views:], full.background)
+        val_rays = val.sample(4096, torch.Generator().manual_seed(cfg.seed + 1))
+    elif cfg.fit_geometry and cfg.guard:
+        val_rays = full.sample(4096, torch.Generator().manual_seed(cfg.seed + 1))
+    best = None
+
+    def snapshot():
+        return {nid: {k: r.detach().clone() for k, r in n.raw.items() if k != "color"} for nid, n in g.nodes.items()}
+
+    def val_score():
+        i, m = _ray_metrics(g, val_rays, cfg.opts)
+        return i - 2.0 * m
+
+    if cfg.fit_geometry and cfg.guard:
+        best = (val_score(), snapshot(), 0)
     for step in range(cfg.steps):
         f = step / max(cfg.steps - 1, 1)
         opts = RenderOpts(**{**cfg.opts.__dict__,
@@ -371,11 +392,19 @@ def fit_images(g: Graph, target: ImageTarget, cfg: Optional[ImageFitConfig] = No
                         p.grad.nan_to_num_(0.0)
             opt.step()
         hist.append(loss.item())
+        if best is not None and not warm and ((step + 1) % cfg.val_every == 0 or step == cfg.steps - 1):
+            v = val_score()
+            if v > best[0] + 1e-4:
+                best = (v, snapshot(), step + 1)
         if verbose and step % 50 == 0:
             print(f"  img step {step:4d} loss {float(loss):.4f} sigma {opts.sigma:.4f}")
     g.requires_grad_(False)
-    if cfg.fit_geometry and cfg.guard:
-        g = _guard_geometry(g0, g, target, cfg)
+    if best is not None:  # restore the best-validated geometry, keep the final colors
+        for nid, raws in best[1].items():
+            for k, r in raws.items():
+                g.nodes[nid].raw[k] = r
+        if verbose:
+            print(f"  guard: kept geometry from step {best[2]} (val score {best[0]:.4f})")
     return g, hist
 
 
@@ -388,18 +417,3 @@ def _ray_metrics(g: Graph, rays, opts: RenderOpts) -> tuple[float, float]:
     both = r["hit"] & gm & has_d
     mae = float((r["depth"] - dep)[both].abs().mean()) if both.any() else 0.0
     return iou_, mae
-
-
-def _guard_geometry(g0: Graph, g: Graph, target: ImageTarget, cfg: ImageFitConfig) -> Graph:
-    """Do-no-harm: if the fitted geometry is worse than the input on a fixed ray set (lower silhouette IoU
-    and no better depth), keep the input geometry and only take the fitted colors."""
-    rays = target.sample(4096, torch.Generator().manual_seed(cfg.seed + 1))
-    i0, m0 = _ray_metrics(g0, rays, cfg.opts)
-    i1, m1 = _ray_metrics(g, rays, cfg.opts)
-    if i1 >= i0 - 1e-3 or m1 < m0 - 1e-3:
-        return g
-    out = g0.clone()
-    for nid, n in g.nodes.items():
-        if nid in out.nodes and "color" in n.raw:
-            out.nodes[nid].raw["color"] = n.raw["color"].detach().clone()
-    return out
