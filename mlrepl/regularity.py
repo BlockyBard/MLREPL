@@ -383,6 +383,189 @@ def plane_slab(g: Optional[Graph], part: np.ndarray, target: Target, rng) -> Opt
 
 
 # ---------------------------------------------------------------------------
+# Data-side pattern detection: repeated *missing* pieces -> pattern op with one fitted prototype.
+# Works before any instance node exists, so the search doesn't have to stumble into a pattern-exact
+# intermediate program first.
+# ---------------------------------------------------------------------------
+
+
+def _shape_feature(P: np.ndarray):
+    c = P.mean(0)
+    w = np.sqrt(np.maximum(np.linalg.eigvalsh(np.cov((P - c).T) + 1e-9 * np.eye(3)), 0))[::-1]
+    return c, w, len(P)
+
+
+def component_groups(parts: list, rel: float = 0.35, min_size: int = 2) -> list[list[int]]:
+    """Greedy grouping of point-cloud components with similar size (principal std devs, point count)."""
+    feats = [_shape_feature(P) for P in parts]
+    groups: list[list[int]] = []
+    for i, (_, w, n) in enumerate(feats):
+        for grp in groups:
+            _, w0, n0 = feats[grp[0]]
+            if np.all(np.abs(w - w0) <= rel * w0 + 0.01) and 0.5 <= n / max(n0, 1) <= 2.0:
+                grp.append(i)
+                break
+        else:
+            groups.append([i])
+    return sorted([grp for grp in groups if len(grp) >= min_size], key=len, reverse=True)
+
+
+def data_pattern_proposals(g: Optional[Graph], parts: list, target: Target, rng, kind: Optional[str] = None
+                           ) -> list[tuple[str, Graph]]:
+    """For groups of similar missing components (largest first): fit a line / grid / circle to their
+    centroids and propose pattern(placed prototype) unioned into g. Returns the proposals of the first
+    group that admits any pattern."""
+
+    groups = component_groups(parts)
+    if not groups:
+        return []
+    out_all = []
+    for grp in groups[:3]:
+        out_all += _group_proposals(g, [parts[i] for i in grp], target, rng, kind)
+        if out_all:
+            break
+    return out_all
+
+
+def _group_proposals(g, members, target, rng, kind):
+    from .search import best_kind, prim_from_points, union_with
+
+    C = np.array([m.mean(0) for m in members])
+    K = len(members)
+    rep = members[int(np.argsort([len(m) for m in members])[K // 2])]
+    if kind is None:
+        kind = best_kind(rep, target, rng, g) if g is not None else str(rng.choice(["box", "cylinder"]))
+    params, _, rot = prim_from_points(kind, rep - rep.mean(0))
+    out = []
+
+    def new_graph():
+        h = g.clone() if g is not None else Graph()
+        p = h.add(kind, params=params)
+        return h, p
+
+    def finish(h, top, name):
+        if g is None:
+            h.output = top
+        else:
+            union_with(h, top)
+        out.append((name, h))
+
+    line = fit_line_pattern(C, tol=0.25)
+    if line is not None:
+        c, d = line
+        h, p = new_graph()
+        inner = h.add("transform", [p], params={"t": [0, 0, 0], "r": rot.tolist(), "s": [1.0]})
+        arr = h.add("array", [inner], params={"d": d.tolist()}, attrs={"n": K})
+        finish(h, h.add("transform", [arr], params={"t": c.tolist(), "r": [0, 0, 0], "s": [1.0]}), "data_array")
+    grid = fit_grid_pattern(C, tol=0.25) if K >= 4 else None
+    if grid is not None:
+        c, d1, a, d2, b = grid
+        h, p = new_graph()
+        inner = h.add("transform", [p], params={"t": [0, 0, 0], "r": rot.tolist(), "s": [1.0]})
+        a_in = h.add("array", [inner], params={"d": d2.tolist()}, attrs={"n": b})
+        a_out = h.add("array", [a_in], params={"d": d1.tolist()}, attrs={"n": a})
+        finish(h, h.add("transform", [a_out], params={"t": c.tolist(), "r": [0, 0, 0], "s": [1.0]}), "data_grid")
+    circ = fit_circle_pattern(C, tol=0.25) if K >= 3 else None
+    if circ is not None:
+        c, nrm, _R = circ
+        w_out = _frame_y_to(nrm)
+        R_out = _rotvec_to_mat(w_out)
+        _, _, rot0 = prim_from_points(kind, members[0] - members[0].mean(0))
+        t0 = R_out.T @ (C[0] - c)
+        r0 = _mat_to_rotvec(R_out.T @ _rotvec_to_mat(rot0))
+        h, p = new_graph()
+        pin = h.add("transform", [p], params={"t": t0.tolist(), "r": r0.tolist(), "s": [1.0]})
+        rad = h.add("radial", [pin], attrs={"n": K})
+        finish(h, h.add("transform", [rad], params={"t": c.tolist(), "r": w_out.tolist(), "s": [1.0]}),
+               "data_radial")
+    return out
+
+
+def _periodic_peaks(x: np.ndarray, bins: int = 64, min_peaks: int = 2, tol: float = 0.3):
+    """Evenly spaced density peaks of a 1-D sample (posts along a fence, teeth around a gear).
+    Returns sorted peak positions, or None if the profile isn't periodic."""
+    if len(x) < 30:
+        return None
+    hist, edges = np.histogram(x, bins=bins)
+    h = np.convolve(hist, np.ones(3) / 3, mode="same")
+    thr = h.mean() + 0.5 * h.std()
+    pk = [i for i in range(1, bins - 1) if h[i] >= h[i - 1] and h[i] > h[i + 1] and h[i] > thr]
+    if len(pk) < min_peaks:
+        return None
+    centers = 0.5 * (edges[:-1] + edges[1:])[pk]
+    gaps = np.diff(centers)
+    if len(gaps) and np.abs(gaps - np.median(gaps)).max() > tol * np.median(gaps):
+        return None
+    return centers
+
+
+def split_periodic(part: np.ndarray, min_pts: int = 60) -> list:
+    """Split one connected missing region into repeated pieces when its density along a principal axis
+    (or its angle around the region's normal axis) is periodic: rails joining posts, a lintel joining
+    columns, adjacent gear teeth merged by the residual grid. Returns [] when nothing periodic is found."""
+    if len(part) < min_pts:
+        return []
+    c = part.mean(0)
+    X = part - c
+    _, _, Vt = np.linalg.svd(X, full_matrices=False)
+    for ax in Vt[:2]:  # linear periodicity along the two main axes
+        s = X @ ax
+        pk = _periodic_peaks(s)
+        if pk is None or len(pk) < 3:
+            continue
+        half = 0.3 * np.median(np.diff(pk))
+        pieces = [part[np.abs(s - p) < half] for p in pk]
+        pieces = [q for q in pieces if len(q) >= 8]
+        if len(pieces) >= 3:
+            return pieces
+    # angular periodicity around the axis normal to the region's main plane
+    nrm = Vt[2]
+    e1, e2 = Vt[0], Vt[1]
+    ang = np.arctan2(X @ e2, X @ e1)
+    rad = np.linalg.norm(np.stack([X @ e1, X @ e2], 1), axis=1)
+    for keep in (np.ones(len(part), bool), rad > np.percentile(rad, 40)):  # whole ring, then rim only
+        pk = _periodic_peaks(ang[keep], bins=96, min_peaks=3)
+        if pk is None or len(pk) < 3:
+            continue
+        half = 0.3 * np.median(np.diff(pk))
+        sel, a = part[keep], ang[keep]
+        pieces = [sel[np.abs(np.angle(np.exp(1j * (a - p)))) < half] for p in pk]
+        pieces = [q for q in pieces if len(q) >= 8]
+        if len(pieces) >= 3:
+            return pieces
+    return []
+
+
+def candidate_piece_sets(parts: list) -> list:
+    """Alternative decompositions of the missing volume, kept separate so pieces of different
+    decompositions never get grouped together: the residual components themselves, then the periodic
+    split of each component and of all components together (teeth merged pairwise by the residual
+    grid only show their period as a whole)."""
+    sets = [list(parts)] if len(parts) >= 2 else []
+    regions = list(parts) + ([np.concatenate(parts)] if len(parts) > 1 else [])
+    for P in regions:
+        sp = split_periodic(P)
+        if len(sp) >= 2:
+            sets.append(sp)
+    return sets
+
+
+def candidate_pieces(parts: list) -> list:
+    """Flat list of all candidate pieces (for inspection/tests)."""
+    return [p for s in candidate_piece_sets(parts) for p in s]
+
+
+def make_m_data_pattern(target: Target):
+    def m(g, res, rng):
+        props = []
+        for pieces in candidate_piece_sets(res.fn_parts):
+            props += data_pattern_proposals(g, pieces, target, rng)
+        return props[rng.integers(len(props))][1] if props else None
+
+    return m
+
+
+# ---------------------------------------------------------------------------
 # mutation entry points (signature: (g, residual, rng) -> Graph | None)
 # ---------------------------------------------------------------------------
 

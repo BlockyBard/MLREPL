@@ -44,8 +44,8 @@ def _init_worker(target: Target, threads: int):
 def _work(args):
     from . import search as S
 
-    g, origin, gen, fit_cfg, beta, w_surf = args
-    c = S._evaluate(g, _W_TARGET, fit_cfg, beta, origin, gen, w_surf=w_surf)
+    g, origin, gen, fit_cfg, beta, w_surf, warm = args
+    c = S._evaluate(g, _W_TARGET, fit_cfg, beta, origin, gen, w_surf=w_surf, warm_ids=warm)
     c.graph.to("cpu")
     return c
 
@@ -79,7 +79,8 @@ class ProcessEvaluator:
         if not jobs:
             return []
         self._ensure(target)
-        args = [(g.clone().to("cpu"), origin, gen, cfg.fit, cfg.beta, S.W_SURF) for g, origin in jobs]
+        args = [(j[0].clone().to("cpu"), j[1], gen, cfg.fit, cfg.beta, S.W_SURF, j[2] if len(j) > 2 else ())
+                for j in jobs]
         out = list(self.pool.map(_work, args))
         for c in out:
             c.graph.to(target.device)

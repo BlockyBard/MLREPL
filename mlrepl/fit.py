@@ -65,6 +65,11 @@ class FitConfig:
     max_nan_events: int = 8  # give up (keep last good params) after this many non-finite steps
     pos_bound: float = 4.0  # |translation| clamp, in units of the target's half-diagonal
     compile: bool = False  # torch.compile the loss for this fit (pays a per-structure compile cost; GPU + long fits)
+    # warm start: nodes inherited unchanged from an already-fitted parent get a lower learning rate, and
+    # the boolean softness starts low, so a child doesn't first undo what the parent already fitted
+    warm_ids: tuple = ()
+    warm_lr_mult: float = 0.25
+    warm_tau0: float = 0.008
     beta: float = 1e-3  # complexity weight in score
     w_surf_score: float = 0.5  # weight of surface recall vs volume IoU in the score
 
@@ -140,20 +145,23 @@ def param_group(node, name: str) -> str:
 def _make_opt(g: Graph, cfg: FitConfig):
     frozen = _frozen(g) if cfg.freeze_gauge else set()
     g.requires_grad_(True)
-    groups: dict[str, list] = {}
+    warm = set(cfg.warm_ids)
+    groups: dict[tuple, list] = {}
     for nid in g.reachable():
         n = g.nodes[nid]
         for name, r in n.raw.items():
             if (nid, name) in frozen or (name == "logit" and not cfg.soft_gates):
                 r.requires_grad_(False)
                 continue
-            groups.setdefault(param_group(n, name), []).append(r)
+            groups.setdefault((param_group(n, name), nid in warm), []).append(r)
     if not groups:
         return None
     pg = []
-    for key, params in groups.items():
+    for (key, is_warm), params in groups.items():
         base = cfg.lr_logit if key == "logit" else cfg.lr * cfg.lr_mult.get(key, 1.0)
-        pg.append({"params": params, "lr": base, "base_lr": base, "name": key})
+        if is_warm:
+            base *= cfg.warm_lr_mult
+        pg.append({"params": params, "lr": base, "base_lr": base, "name": key, "warm": is_warm})
     return torch.optim.Adam(pg)
 
 
@@ -177,6 +185,37 @@ def clamp_params(g: Graph, pos_bound: float):
                 r.clamp_(-8.0, 8.0)
             elif name == "logit":
                 r.clamp_(-20.0, 20.0)
+
+
+_SIZE = {"sphere": ["r"], "box": ["b", "round"], "cylinder": ["r", "h"], "capsule": ["r", "h"], "torus": ["R", "r"]}
+
+
+@torch.no_grad()
+def gauge_fix(g: Graph):
+    """Instance scales and their primitive prototype's size are redundant (s * size is what matters).
+    Left free, Adam drifts along that valley and the drift leaks into other parameters. After every
+    step, move the instances' mean log-scale into the prototype (in place, so optimizer state stays)."""
+    par = None
+    for n in g.nodes.values():
+        if n.spec.category != "inst" or "s" not in n.raw or n.k == 0:
+            continue
+        proto = g.nodes.get(n.inputs[0])
+        if proto is None or proto.op not in _SIZE:
+            continue
+        if par is None:
+            par = g.parents()
+        if len(par.get(proto.id, [])) != 1:
+            continue
+        sv = n.value("s")
+        m = torch.exp(torch.log(sv).mean())
+        if abs(float(m) - 1.0) < 1e-4:
+            continue
+        ps = n.spec.params["s"]
+        n.raw["s"].copy_(ps.to_raw(sv / m))
+        for name in _SIZE[proto.op]:
+            if name in proto.raw:
+                pp = proto.spec.params[name]
+                proto.raw[name].copy_(pp.to_raw(proto.value(name) * m))
 
 
 def _all_finite(params) -> bool:
@@ -326,6 +365,7 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
     pos_bound = cfg.pos_bound * 0.5 * target.diag
     hist, nan_events, steps_run = [], 0, 0
     ema, ema_ref, lr_scale = None, None, 1.0
+    tau0 = min(cfg.tau0, cfg.warm_tau0) if cfg.warm_ids else cfg.tau0
     lossf = loss_terms
     if cfg.compile:
         lossf = torch.compile(loss_terms, dynamic=False, fullgraph=False)
@@ -333,7 +373,7 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
         for step in range(cfg.steps):
             f = step / max(cfg.steps - 1, 1)
             a = min(f / cfg.anneal_end, 1.0)
-            tau = cfg.tau0 * (1 - a)
+            tau = tau0 * (1 - a)
             eps = math.exp((1 - a) * math.log(cfg.eps0) + a * math.log(cfg.eps1))
             ctx = EvalCtx(tau=tau, gate_scale=cfg.gate_scale, hard_gates=not cfg.soft_gates)
             late = f >= cfg.anneal_end
@@ -373,6 +413,7 @@ def fit(g: Graph, target: Target, cfg: Optional[FitConfig] = None, verbose: bool
                     break
                 continue
             clamp_params(g, pos_bound)
+            gauge_fix(g)
             lv = loss.item()
             hist.append(lv)
             if _instance_nodes(g) and step > 0 and step % cfg.densify_every == 0:

@@ -430,7 +430,8 @@ MUTATIONS: dict[str, Callable] = {
 DEFAULT_WEIGHTS = {"add": 3.0, "subtract": 1.5, "remove": 1.0, "swap": 1.0, "deform": 1.0, "to_instance": 0.7,
                    "instancify": 1.0, "instance_deform": 0.5, "macro": 2.0,
                    # regularity detectors (regularity.py)
-                   "pattern": 2.0, "mirror": 1.0, "symmetrize": 0.7, "plane": 1.5, "count": 0.5}
+                   "pattern": 2.0, "mirror": 1.0, "symmetrize": 0.7, "plane": 1.5, "count": 0.5,
+                   "data_pattern": 2.5}
 
 
 # ---------------------------------------------------------------------------
@@ -454,6 +455,7 @@ class SearchConfig:
     adaptive: bool = True  # bandit re-weighting of mutations by observed improvement rate
     simplify: bool = True  # final deterministic simplification sweep
     regularity: bool = True  # detector moves: pattern (array/grid/radial), mirror, symmetrize, plane, count
+    warm_start: bool = True  # children fit inherited nodes gently (see FitConfig.warm_ids)
     w_surf_score: float = 0.5  # surface-recall weight in the score (0 = pure volume IoU, the v0 behaviour)
     simplify_fit: FitConfig = field(default_factory=lambda: FitConfig(steps=120, nv=2048, ns=512))
     library: list = field(default_factory=list)  # mined Macros (abstraction.mine)
@@ -542,10 +544,24 @@ def canonicalize(g: Graph) -> Graph:
 W_SURF = 0.5  # module default; SearchConfig.w_surf_score overrides per search
 
 
+def inherited_ids(child: Graph, parent: Graph) -> tuple:
+    """Nodes of `child` that are unchanged copies of already-fitted `parent` nodes (same id, op, attrs
+    and parameter shapes). These get warm-start treatment in fit()."""
+    out = []
+    for nid, n in child.nodes.items():
+        p = parent.nodes.get(nid)
+        if p is None or p.op != n.op or p.attrs != n.attrs or p.inputs != n.inputs:
+            continue
+        if set(p.raw) != set(n.raw) or any(p.raw[k].shape != n.raw[k].shape for k in n.raw):
+            continue
+        out.append(nid)
+    return tuple(sorted(out))
+
+
 def _evaluate(g: Graph, target: Target, fcfg: FitConfig, beta: float, origin: str, gen: int,
-              w_surf: Optional[float] = None) -> Candidate:
+              w_surf: Optional[float] = None, warm_ids: tuple = ()) -> Candidate:
     w = W_SURF if w_surf is None else w_surf
-    fcfg = FitConfig(**{**fcfg.__dict__, "beta": beta, "w_surf_score": w})
+    fcfg = FitConfig(**{**fcfg.__dict__, "beta": beta, "w_surf_score": w, "warm_ids": tuple(warm_ids)})
     r = fit(g, target, fcfg)
     cg = canonicalize(r.graph)
     return Candidate(cg, score(cg, target, beta, w_surf=w), r.iou, origin, gen)
@@ -614,7 +630,9 @@ parallel/batched evaluation (see parallel.py) without touching the search logic.
 
 
 def serial_evaluator(jobs: list, target: Target, cfg: "SearchConfig", gen: int) -> list:
-    return [_evaluate(g, target, cfg.fit, cfg.beta, origin, gen) for g, origin in jobs]
+    """jobs: (graph, origin) or (graph, origin, warm_ids)."""
+    return [_evaluate(j[0], target, cfg.fit, cfg.beta, j[1], gen, warm_ids=j[2] if len(j) > 2 else ())
+            for j in jobs]
 
 
 def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[list[Graph]] = None,
@@ -656,6 +674,7 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
         muts["symmetrize"] = REG.make_m_symmetrize(target)
         muts["plane"] = REG.make_m_plane(target)
         muts["count"] = REG.m_count
+        muts["data_pattern"] = REG.make_m_data_pattern(target)
     if cfg.library:
         muts["macro"] = lambda g, res, rng: m_macro(g, res, rng, cfg.library)
     names = list(muts)
@@ -740,7 +759,8 @@ def search(target: Target, cfg: Optional[SearchConfig] = None, init: Optional[li
                     stats[name][0] += 1
                     child = muts[name](parent.graph, res, rng)
                     if child is not None:
-                        jobs.append((child, name))
+                        warm = inherited_ids(child, parent.graph) if cfg.warm_start else ()
+                        jobs.append((child, name, warm))
                         parents.append(parent)
                         stats[name][1] += 1
                         break

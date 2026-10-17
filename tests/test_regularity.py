@@ -112,3 +112,60 @@ def test_canonicalize_drops_unit_array():
     s = g.add("sphere", params={"r": [0.3]})
     g.output = g.add("array", [s], params={"d": [0.3, 0, 0]}, attrs={"n": 1})
     assert signature(canonicalize(g)) == "sphere"
+
+
+# ---------------------------------------------------------------- data-side detection + warm start
+
+
+def _partial(name):
+    from mlrepl.search import residual
+
+    T = from_graph(library.ALL[name](), n_eval=60000)
+    g = Graph()
+    if name == "gear":
+        g.output = g.add("cylinder", params={"r": [0.55], "h": [0.12]})
+    elif name == "fence":
+        g.output = g.placed("box", pos=(0, 0.3, 0.08), b=[0.95, 0.05, 0.03])
+    else:  # table
+        g.output = g.placed("box", pos=(0, 0.5, 0), b=[0.8, 0.06, 0.5])
+    return g, T, residual(g, T)
+
+
+@pytest.mark.parametrize("name,expect", [("gear", "radial[12]"), ("fence", "array[6]"), ("table", "array[2](array[2]")])
+def test_data_side_detector_finds_repeats(name, expect):
+    g, T, res = _partial(name)
+    props = [x for p in R.candidate_piece_sets(res.fn_parts)
+             for x in R.data_pattern_proposals(g, p, T, np.random.default_rng(0), kind="box")]
+    assert any(expect in signature(h) for _, h in props), [signature(h) for _, h in props]
+    for _, h in props:
+        h.validate()
+
+
+def test_periodic_split_separates_joined_repeats():
+    _, _, res = _partial("fence")  # posts joined by the lower rail -> one residual component
+    assert len(res.fn_parts) == 1
+    pieces = R.split_periodic(res.fn_parts[0])
+    assert len(pieces) == 6
+
+
+def test_warm_start_reduces_refit_drift():
+    from mlrepl.fit import FitConfig, fit, score
+
+    g = library.table()
+    T = from_graph(g, n_eval=20000)
+    s0 = score(g, T, 1e-3)
+    cold = [fit(g, T, FitConfig(steps=80, nv=1024, ns=256, seed=s)).score - s0 for s in range(3)]
+    warm = [fit(g, T, FitConfig(steps=80, nv=1024, ns=256, seed=s, warm_ids=tuple(g.nodes))).score - s0
+            for s in range(3)]
+    assert np.mean(np.abs(warm)) <= np.mean(np.abs(cold)) + 1e-3
+
+
+def test_inherited_ids_tracks_unchanged_nodes():
+    from mlrepl.search import inherited_ids, union_with
+
+    p = library.table()
+    c = p.clone()
+    union_with(c, c.placed("sphere", r=[0.1]))
+    ids = set(inherited_ids(c, p))
+    assert set(p.nodes) - {p.output} <= ids  # the old union changed (new child), everything else inherited
+    assert not any(c.nodes[i].op == "sphere" for i in ids)
