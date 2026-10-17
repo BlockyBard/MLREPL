@@ -1,0 +1,910 @@
+{
+ "gear/baseline/0": {
+  "score": 0.16807353947448264,
+  "iou": 0.8880195599022005,
+  "complexity": 97.5,
+  "patterns": {},
+  "structure": "instance(box)",
+  "seconds": 207.1,
+  "detector_stats": {}
+ },
+ "gear/detectors/0": {
+  "score": 0.07572082143918274,
+  "iou": 0.9590583418628454,
+  "complexity": 53.5,
+  "patterns": {
+   "radial": 1
+  },
+  "structure": "transform(radial[4](instance(box)))",
+  "seconds": 545.4,
+  "detector_stats": {
+   "pattern": [
+    23,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    13,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    10,
+    5,
+    1,
+    0
+   ],
+   "plane": [
+    34,
+    14,
+    11,
+    3
+   ],
+   "count": [
+    2,
+    2,
+    0,
+    0
+   ],
+   "data_pattern": [
+    34,
+    14,
+    7,
+    3
+   ]
+  }
+ },
+ "fence/baseline/0": {
+  "score": 0.4667155881255034,
+  "iou": 0.31273549359457425,
+  "complexity": 31.0,
+  "patterns": {},
+  "structure": "subtract(transform(box),transform(box))",
+  "seconds": 116.5,
+  "detector_stats": {}
+ },
+ "fence/detectors/0": {
+  "score": 0.13296216688383966,
+  "iou": 0.8532423208191127,
+  "complexity": 59.5,
+  "patterns": {
+   "array": 1
+  },
+  "structure": "union(instance(capsule),transform(array[6](transform(cylinder))),transform(box))",
+  "seconds": 221.5,
+  "detector_stats": {
+   "pattern": [
+    20,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    13,
+    13,
+    3,
+    0
+   ],
+   "count": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    18,
+    11,
+    2,
+    1
+   ]
+  }
+ },
+ "colonnade/baseline/0": {
+  "score": 0.2689559672606531,
+  "iou": 0.787254711482417,
+  "complexity": 58.0,
+  "patterns": {},
+  "structure": "union(instance(box),transform(capsule))",
+  "seconds": 171.3,
+  "detector_stats": {}
+ },
+ "colonnade/detectors/0": {
+  "score": 0.2849462384040888,
+  "iou": 0.7302742025741467,
+  "complexity": 63.0,
+  "patterns": {
+   "mirror": 1
+  },
+  "structure": "union(mirror[0](transform(box)),transform(box),transform(box),transform(box))",
+  "seconds": 204.0,
+  "detector_stats": {
+   "pattern": [
+    12,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    5,
+    4,
+    4,
+    2
+   ],
+   "plane": [
+    9,
+    9,
+    6,
+    3
+   ],
+   "count": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    24,
+    19,
+    7,
+    1
+   ]
+  }
+ },
+ "table/baseline/0": {
+  "score": 0.04538505747126439,
+  "iou": 0.9902298850574712,
+  "complexity": 40.5,
+  "patterns": {},
+  "structure": "union(instance(cylinder),transform(box))",
+  "seconds": 106.2,
+  "detector_stats": {}
+ },
+ "table/detectors/0": {
+  "score": 0.052948275862068975,
+  "iou": 0.993103448275862,
+  "complexity": 49.5,
+  "patterns": {
+   "array": 2
+  },
+  "structure": "union(transform(array[2](array[2](transform(cylinder)))),transform(box))",
+  "seconds": 135.9,
+  "detector_stats": {
+   "pattern": [
+    25,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    10,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    3,
+    2,
+    0,
+    0
+   ],
+   "plane": [
+    38,
+    8,
+    7,
+    1
+   ],
+   "count": [
+    7,
+    5,
+    0,
+    0
+   ],
+   "data_pattern": [
+    57,
+    9,
+    8,
+    2
+   ]
+  }
+ },
+ "stool/baseline/0": {
+  "score": 0.12524353611160854,
+  "iou": 0.8965129358830146,
+  "complexity": 71.5,
+  "patterns": {},
+  "structure": "union(subtract(transform(cylinder),transform(box)),transform(capsule),transform(capsule),transform(cylinder))",
+  "seconds": 161.7,
+  "detector_stats": {}
+ },
+ "stool/detectors/0": {
+  "score": 0.10533220003577348,
+  "iou": 0.9060022650056625,
+  "complexity": 57.5,
+  "patterns": {
+   "radial": 1
+  },
+  "structure": "union(subtract(transform(cylinder),transform(cylinder)),transform(radial[3](transform(capsule))))",
+  "seconds": 173.7,
+  "detector_stats": {
+   "pattern": [
+    14,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    4,
+    2,
+    1,
+    0
+   ],
+   "plane": [
+    15,
+    15,
+    4,
+    0
+   ],
+   "count": [
+    2,
+    2,
+    0,
+    0
+   ],
+   "data_pattern": [
+    21,
+    11,
+    3,
+    3
+   ]
+  }
+ },
+ "bracket/baseline/0": {
+  "score": 0.03928658536585363,
+  "iou": 0.9954268292682927,
+  "complexity": 37.0,
+  "patterns": {},
+  "structure": "subtract(transform(box),instance(cylinder))",
+  "seconds": 105.0,
+  "detector_stats": {}
+ },
+ "bracket/detectors/0": {
+  "score": 0.039791878172588856,
+  "iou": 0.9944162436548223,
+  "complexity": 37.0,
+  "patterns": {},
+  "structure": "subtract(transform(box),instance(cylinder))",
+  "seconds": 128.1,
+  "detector_stats": {
+   "pattern": [
+    34,
+    8,
+    0,
+    2
+   ],
+   "mirror": [
+    16,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    14,
+    10,
+    0,
+    2
+   ],
+   "plane": [
+    44,
+    1,
+    1,
+    0
+   ],
+   "count": [
+    13,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    64,
+    1,
+    1,
+    0
+   ]
+  }
+ },
+ "rubble/baseline/0": {
+  "score": 0.1298108509642855,
+  "iou": 0.958044982698962,
+  "complexity": 99.5,
+  "patterns": {},
+  "structure": "union(instance(sphere),transform(box))",
+  "seconds": 311.3,
+  "detector_stats": {}
+ },
+ "rubble/detectors/0": {
+  "score": 0.163710279224703,
+  "iou": 0.9119127516778524,
+  "complexity": 82.5,
+  "patterns": {},
+  "structure": "instance(capsule)",
+  "seconds": 413.6,
+  "detector_stats": {
+   "pattern": [
+    13,
+    1,
+    0,
+    0
+   ],
+   "mirror": [
+    6,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    2,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    11,
+    11,
+    8,
+    1
+   ],
+   "count": [
+    2,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    31,
+    10,
+    8,
+    0
+   ]
+  }
+ },
+ "cairn/baseline/0": {
+  "score": 0.23376600057749636,
+  "iou": 0.8801346801346801,
+  "complexity": 106.5,
+  "patterns": {},
+  "structure": "union(instance+dk(cylinder),transform(box))",
+  "seconds": 339.7,
+  "detector_stats": {}
+ },
+ "cairn/detectors/0": {
+  "score": 0.20173101639049076,
+  "iou": 0.9068712940355773,
+  "complexity": 95.5,
+  "patterns": {},
+  "structure": "union(instance(cylinder),transform(cylinder))",
+  "seconds": 285.6,
+  "detector_stats": {
+   "pattern": [
+    12,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    6,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    15,
+    15,
+    9,
+    4
+   ],
+   "count": [
+    2,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    26,
+    8,
+    3,
+    0
+   ]
+  }
+ },
+ "gear/baseline/1": {
+  "score": 0.29553833348344105,
+  "iou": 0.6215900233826968,
+  "complexity": 62.5,
+  "patterns": {},
+  "structure": "instance(box)",
+  "seconds": 226.6,
+  "detector_stats": {}
+ },
+ "gear/detectors/1": {
+  "score": 0.10595870622585707,
+  "iou": 0.9317492416582407,
+  "complexity": 59.0,
+  "patterns": {
+   "radial": 2,
+   "mirror": 1
+  },
+  "structure": "mirror[0](subtract(transform(radial[12](transform(box))),transform(radial[4](transform(cylinder)))))",
+  "seconds": 469.0,
+  "detector_stats": {
+   "pattern": [
+    15,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    9,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    3,
+    1,
+    1,
+    1
+   ],
+   "plane": [
+    14,
+    9,
+    4,
+    0
+   ],
+   "count": [
+    5,
+    5,
+    0,
+    0
+   ],
+   "data_pattern": [
+    29,
+    9,
+    2,
+    2
+   ]
+  }
+ },
+ "fence/baseline/1": {
+  "score": 0.21231152631109676,
+  "iou": 0.8245436105476673,
+  "complexity": 104.0,
+  "patterns": {},
+  "structure": "union(subtract(transform(box),instance(box)),transform(box),transform(box))",
+  "seconds": 187.0,
+  "detector_stats": {}
+ },
+ "fence/detectors/1": {
+  "score": 0.0853888888888889,
+  "iou": 0.9722222222222222,
+  "complexity": 71.5,
+  "patterns": {
+   "array": 1
+  },
+  "structure": "union(transform(array[5](transform(box))),transform(box),transform(box),transform(box))",
+  "seconds": 208.7,
+  "detector_stats": {
+   "pattern": [
+    14,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    5,
+    2,
+    2,
+    0
+   ],
+   "plane": [
+    11,
+    11,
+    9,
+    3
+   ],
+   "count": [
+    4,
+    1,
+    0,
+    0
+   ],
+   "data_pattern": [
+    18,
+    11,
+    5,
+    1
+   ]
+  }
+ },
+ "colonnade/baseline/1": {
+  "score": 0.27353704625588876,
+  "iou": 0.7825925925925926,
+  "complexity": 74.5,
+  "patterns": {},
+  "structure": "union(subtract(transform(box),transform(box)),transform(box),transform(box),transform(cylinder))",
+  "seconds": 153.4,
+  "detector_stats": {}
+ },
+ "colonnade/detectors/1": {
+  "score": 0.3182985819639571,
+  "iou": 0.7665694849368319,
+  "complexity": 111.0,
+  "patterns": {
+   "array": 2
+  },
+  "structure": "union(transform(array[2](transform(box))),transform(array[2](transform(cylinder))),transform(box),transform(box),transform(box),transform(box))",
+  "seconds": 189.7,
+  "detector_stats": {
+   "pattern": [
+    7,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    7,
+    7,
+    4,
+    2
+   ],
+   "count": [
+    6,
+    3,
+    2,
+    0
+   ],
+   "data_pattern": [
+    17,
+    17,
+    5,
+    2
+   ]
+  }
+ },
+ "table/baseline/1": {
+  "score": 0.04429451255107999,
+  "iou": 0.99241097489784,
+  "complexity": 40.5,
+  "patterns": {},
+  "structure": "union(instance(cylinder),transform(box))",
+  "seconds": 124.0,
+  "detector_stats": {}
+ },
+ "table/detectors/1": {
+  "score": 0.04718993600930773,
+  "iou": 0.9866201279813845,
+  "complexity": 40.5,
+  "patterns": {},
+  "structure": "union(instance(cylinder),transform(box))",
+  "seconds": 115.1,
+  "detector_stats": {
+   "pattern": [
+    19,
+    6,
+    0,
+    0
+   ],
+   "mirror": [
+    7,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    42,
+    6,
+    6,
+    0
+   ],
+   "count": [
+    3,
+    3,
+    0,
+    0
+   ],
+   "data_pattern": [
+    58,
+    4,
+    4,
+    1
+   ]
+  }
+ },
+ "stool/baseline/1": {
+  "score": 0.18928416174747908,
+  "iou": 0.8165983606557377,
+  "complexity": 75.5,
+  "patterns": {},
+  "structure": "union(instance(capsule),subtract(transform(box),transform(box)))",
+  "seconds": 150.3,
+  "detector_stats": {}
+ },
+ "stool/detectors/1": {
+  "score": 0.11362197756354785,
+  "iou": 0.9342560553633218,
+  "complexity": 80.0,
+  "patterns": {},
+  "structure": "union(instance(cylinder),subtract(transform(cylinder),transform(cylinder)),transform(box))",
+  "seconds": 221.8,
+  "detector_stats": {
+   "pattern": [
+    13,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    3,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    5,
+    4,
+    2,
+    2
+   ],
+   "plane": [
+    9,
+    9,
+    6,
+    2
+   ],
+   "count": [
+    3,
+    3,
+    1,
+    0
+   ],
+   "data_pattern": [
+    23,
+    15,
+    10,
+    3
+   ]
+  }
+ },
+ "bracket/baseline/1": {
+  "score": 0.0400549898167006,
+  "iou": 0.9938900203665988,
+  "complexity": 37.0,
+  "patterns": {},
+  "structure": "subtract(transform(box),instance(cylinder))",
+  "seconds": 94.8,
+  "detector_stats": {}
+ },
+ "bracket/detectors/1": {
+  "score": 0.0410712468193384,
+  "iou": 0.9918575063613232,
+  "complexity": 37.0,
+  "patterns": {},
+  "structure": "subtract(transform(box),instance(capsule))",
+  "seconds": 125.0,
+  "detector_stats": {
+   "pattern": [
+    24,
+    8,
+    0,
+    0
+   ],
+   "mirror": [
+    16,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    6,
+    6,
+    0,
+    1
+   ],
+   "plane": [
+    52,
+    3,
+    3,
+    0
+   ],
+   "count": [
+    6,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    69,
+    2,
+    2,
+    0
+   ]
+  }
+ },
+ "rubble/baseline/1": {
+  "score": 0.15395902156392274,
+  "iou": 0.922748612889458,
+  "complexity": 91.0,
+  "patterns": {},
+  "structure": "union(instance(cylinder),transform(box),transform(sphere))",
+  "seconds": 371.8,
+  "detector_stats": {}
+ },
+ "rubble/detectors/1": {
+  "score": 0.13124869594748276,
+  "iou": 0.9530026109660574,
+  "complexity": 90.5,
+  "patterns": {
+   "array": 1
+  },
+  "structure": "union(instance(box),transform(array[2](transform(capsule))),transform(sphere))",
+  "seconds": 198.1,
+  "detector_stats": {
+   "pattern": [
+    12,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    7,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    16,
+    16,
+    12,
+    1
+   ],
+   "count": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    23,
+    14,
+    9,
+    2
+   ]
+  }
+ },
+ "cairn/baseline/1": {
+  "score": 0.225531512605042,
+  "iou": 0.892436974789916,
+  "complexity": 78.0,
+  "patterns": {},
+  "structure": "union(instance(cylinder),instance(torus))",
+  "seconds": 250.0,
+  "detector_stats": {}
+ },
+ "cairn/detectors/1": {
+  "score": 0.1701176074122541,
+  "iou": 0.9035980991174474,
+  "complexity": 93.0,
+  "patterns": {},
+  "structure": "union(instance(box),instance(torus))",
+  "seconds": 193.1,
+  "detector_stats": {
+   "pattern": [
+    21,
+    0,
+    0,
+    0
+   ],
+   "mirror": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "symmetrize": [
+    5,
+    0,
+    0,
+    0
+   ],
+   "plane": [
+    9,
+    9,
+    4,
+    2
+   ],
+   "count": [
+    4,
+    0,
+    0,
+    0
+   ],
+   "data_pattern": [
+    13,
+    3,
+    1,
+    0
+   ]
+  }
+ },
+ "gear/baseline/2": {
+  "score": 0.251901849849787,
+  "iou": 0.8381962864721485,
+  "complexity": 82.5,
+  "patterns": {},
+  "structure": "union(instance(box),subtract(transform(box),transform(cylinder)))",
+  "seconds": 220.1,
+  "detector_stats": {}
+ }
+}

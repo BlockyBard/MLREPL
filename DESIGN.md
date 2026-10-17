@@ -318,3 +318,68 @@ Next, to test the claim properly:
 - **(ii) Cut evaluation noise:** warm-start fits for children that inherit parameters (low τ₀ and
   learning rate), and score with a fixed, converged fit.
 - **(iii) Repeat over 3–5 seeds** and report mean ± spread.
+
+## Regularity experiment v2: data-side detection + warm start, multiple seeds (`results/regularity_v2`)
+
+**Changes since v1:**
+- **Warm-start fits:** nodes a child inherits unchanged from its fitted parent get 0.25× learning
+  rate and low initial boolean softness. Refit spread halved, drift about 30 % lower.
+- **Instance scale gauge** is pinned during fitting.
+- **Data-side pattern detector:**
+  - groups similar missing-volume pieces and fits line / grid / circle to their centroids;
+  - first splits joined regions by density periodicity, linearly (fence posts on a rail) or
+    angularly (gear teeth merged by the residual grid);
+  - proposes `pattern(prototype)` directly from the data, so the search no longer has to reach a
+    pattern-exact instance node first.
+
+**Run:** 100 candidate fits per search, 8 targets × {baseline, detectors}. The planned 3 seeds were
+cut by the 2 h job limit: **seeds 0 and 1 complete**, seed 2 only partly done (gear baseline).
+Mean ± std over completed seeds; "pattern" = runs whose final program contains array/radial/mirror.
+
+| target | baseline score | detectors score | detectors IoU | pattern in final |
+|---|---|---|---|---|
+| gear | 0.239 ± 0.053 | **0.091 ± 0.015** | 0.945 | 2/2 (seed 1: `radial[12]`) |
+| fence | 0.340 ± 0.127 | **0.109 ± 0.024** | 0.913 | 2/2 (`array[6]`, `array[5]`) |
+| stool | 0.157 ± 0.032 | **0.109 ± 0.004** | 0.920 | 1/2 (`radial[3]`) |
+| cairn (irregular) | 0.230 ± 0.004 | **0.186 ± 0.016** | 0.905 | 0/2 |
+| bracket | 0.040 ± 0.000 | 0.040 ± 0.001 | 0.993 | 0/2 |
+| rubble (irregular) | 0.142 ± 0.012 | 0.147 ± 0.016 | 0.932 | 1/2 (`array[2]` of two capsules) |
+| table | **0.045 ± 0.001** | 0.050 ± 0.003 | 0.990 | 1/2 (2×2 grid) |
+| colonnade | **0.271 ± 0.002** | 0.302 ± 0.017 | 0.748 | 2/2 |
+
+Detector usage across detector runs (proposed / fitted / improved parent / entered beam):
+
+| detector | proposed | fitted | improved parent | entered beam |
+|---|---|---|---|---|
+| **data_pattern** | 525 | 158 | **77 (49 %)** | 21 |
+| plane | 339 | 156 | 97 | 22 |
+| symmetrize | 78 | 36 | 11 | 8 |
+| count | 68 | 24 | 3 | 0 |
+| pattern (program-side) | 278 | 23 | 0 | 2 |
+| mirror (program-side) | 118 | 0 | 0 | 0 |
+
+Reading:
+- **Detecting patterns in the data is what makes regularity reachable.** Program-side pattern
+  detection still never improves a parent; data-side detection improves it about half the time it
+  is fitted.
+- Pattern ops now survive into the final program on the shapes where repetition dominates: gear,
+  fence, stool. Those are exactly the large wins, with differences far outside the seed spread.
+- **Losses:**
+  - *Table:* four legs are short enough that a 2×2 grid costs slightly more than a 4-copy instance
+    under the parameter-count complexity. The objective is behaving as specified; the cost model
+    is crude.
+  - *Colonnade:* the arch/lintel structure is still not found, and detector proposals crowd the
+    beam.
+- **Irregular controls:** cairn improved without patterns.
+  - *Rubble:* one run of two kept `array[2]` over two similar capsules. Two similar parts are a
+    legitimate (if weak) "pattern" under a parameter-count cost, since an array of 2 costs about
+    the same as two placements.
+  - This is the case where a **precision-aware description length** (cost of the offsets at the
+    precision they are needed) would be the principled tie-breaker. With plain parameter counts,
+    exact and approximate repetition cost the same.
+
+Next:
+- a precision-aware complexity term (offsets/params coded at fitted precision, so near-duplicates
+  aren't free);
+- reduce the occupancy-loss bias on thin parts;
+- finish seed 2 (the script resumes from `runs.json`).
